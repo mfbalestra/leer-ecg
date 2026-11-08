@@ -1,5 +1,5 @@
 import * as fc from 'fast-check'
-import { describe, expect, it } from 'vitest'
+import { describe, it } from 'vitest'
 
 import { crearAzar } from './azar.ts'
 import { contarQrs, ritmoTieneP } from './latido.ts'
@@ -190,24 +190,37 @@ describe('generarLectura', () => {
         )
         const tira = retos.find((r) => r.vista.tipo === 'tira')?.vista
         if (tira?.tipo !== 'tira') return false
+        const ritmo = tira.tira.ritmo
         const preguntaPr = retos.some((r) => r.tipo === 'ritmo-juzgar-pr')
+        // Ningún enunciado de la lectura dice una medida: la persona cuenta sobre la tira.
+        const sinMedidas = retos.every((r) => !/\d+ (ms|cuadrados)/.test(r.enunciado))
+        const frecuencia = retos[1]?.tipo
         return (
-          retos.length >= 3 &&
+          retos.length >= 4 &&
           retos.length <= 5 &&
           tiras.size === 1 &&
-          preguntaPr === ritmoTieneP(tira.tira.ritmo) &&
+          retos[0]?.tipo === 'ritmo-regular' &&
+          frecuencia === (ritmo === 'regular' ? 'frecuencia-regla-300' : 'frecuencia-contar-qrs') &&
+          preguntaPr === ritmoTieneP(ritmo) &&
+          sinMedidas &&
           retos.every((r) => r.nivel === 'lectura' && respuestaCoherente(r))
         )
       }),
     )
   })
 
-  it('cuando la tira es regular, la primera pregunta es la frecuencia', () => {
-    const retos = generarLectura(crearAzar(3), 1)
-    const primera = retos[0]
-    expect(primera).toBeDefined()
-    if (primera?.vista.tipo === 'tira' && primera.vista.tira.ritmo === 'regular') {
-      expect(primera.tipo).toBe('frecuencia-regla-300')
-    }
+  it('en la lectura, el PR y el QRS se juzgan contando: el enunciado no dice la medida', () => {
+    fc.assert(
+      fc.property(semillas, (semilla) => {
+        const retos = generarLectura(crearAzar(semilla), 1)
+        return retos
+          .filter((r) => r.tipo === 'ritmo-juzgar-pr' || r.tipo === 'ritmo-juzgar-qrs')
+          .every(
+            (r) =>
+              r.enunciado.includes('Contá los cuadrados chicos') &&
+              r.marcas.every((m) => m.etiqueta === 'PR' || m.etiqueta === 'QRS'),
+          )
+      }),
+    )
   })
 })

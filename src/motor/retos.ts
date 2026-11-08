@@ -153,8 +153,9 @@ export const TIPOS_POR_NIVEL: Record<NivelId, readonly TipoReto[]> = {
     'ritmo-juzgar-qrs',
   ],
   lectura: [
-    'frecuencia-regla-300',
     'ritmo-regular',
+    'frecuencia-regla-300',
+    'frecuencia-contar-qrs',
     'ritmo-p',
     'ritmo-juzgar-pr',
     'ritmo-juzgar-qrs',
@@ -523,6 +524,25 @@ function tiraReglaDel300(azar: Azar): {
   return { tira, cuadrados, lpm, marcas }
 }
 
+/** Contar los QRS en los 6 segundos de una tira: la frecuencia aproximada es el conteo × 10. */
+function retoContarQrs(
+  base: { id: string; nivel: NivelId; tipo: TipoReto },
+  tira: Tira,
+  enunciado: string,
+): Reto {
+  const contados = contarQrs(tira, 0, 6000)
+  const lpm = frecuenciaPorConteo(contados, 6)
+  return {
+    ...base,
+    enunciado,
+    vista: { tipo: 'tira', tira },
+    marcas: [{ tipo: 'ventana', desdeMs: 0, hastaMs: 6000, etiqueta: '6 segundos' }],
+    respuesta: { modo: 'conteo', correcta: contados, minimo: 0, maximo: 20, unidad: 'QRS' },
+    acierto: `${contados} QRS en 6 segundos × 10 = ${latidosPorMinuto(lpm)}, aproximadamente.`,
+    error: `Son ${contados} QRS: contá los picos altos dentro de la ventana. ${contados} × 10 = ${latidosPorMinuto(lpm)}.`,
+  }
+}
+
 function retoFrecuencia(
   id: string,
   tipo: TipoFrecuencia,
@@ -568,17 +588,7 @@ function retoFrecuencia(
     case 'frecuencia-contar-qrs': {
       const ritmo = azar.elegir<Ritmo>(['regular', 'sinusal-irregular', 'irregular-sin-p'])
       const tira = tiraDe(azar, 6000, ritmo, { frecuencia: azar.entero(45, 140) })
-      const contados = contarQrs(tira, 0, 6000)
-      const lpm = frecuenciaPorConteo(contados, 6)
-      return {
-        ...base,
-        enunciado: 'Contá los complejos QRS que caen dentro de los 6 segundos.',
-        vista: { tipo: 'tira', tira },
-        marcas: [{ tipo: 'ventana', desdeMs: 0, hastaMs: 6000, etiqueta: '6 segundos' }],
-        respuesta: { modo: 'conteo', correcta: contados, minimo: 0, maximo: 20, unidad: 'QRS' },
-        acierto: `${contados} QRS en 6 segundos × 10 = ${latidosPorMinuto(lpm)}, aproximadamente.`,
-        error: `Son ${contados} QRS: contá los picos altos dentro de la ventana. ${contados} × 10 = ${latidosPorMinuto(lpm)}.`,
-      }
+      return retoContarQrs(base, tira, 'Contá los complejos QRS que caen dentro de los 6 segundos.')
     }
     case 'frecuencia-conteo-a-lpm': {
       const contados = azar.entero(3, 14)
@@ -718,15 +728,103 @@ function retoRitmoTira(
   )
 }
 
+type BaseIntervalo = { id: string; nivel: NivelId; tipo: TipoRitmoIntervalo }
+
+/** ¿El PR es normal o largo? Con la medida en el enunciado, o contando los cuadrados sobre el latido. */
+function retoJuzgarPr(
+  base: BaseIntervalo,
+  azar: Azar,
+  prMs: number,
+  valorEnEnunciado: boolean,
+): Reto {
+  const { vista, region } = prMarcado(azar, prMs)
+  const juicio = juzgarPr(prMs)
+  const chicos = Math.round(cuadradosChicos(prMs))
+  const medida = valorEnEnunciado
+    ? milisegundos(prMs)
+    : `${chicos} cuadrados chicos × ${milisegundos(MS_POR_CUADRADO_CHICO)} = ${milisegundos(prMs)}`
+  return conOpciones(
+    {
+      ...base,
+      enunciado: valorEnEnunciado
+        ? `El PR mide ${milisegundos(prMs)}. ¿Es normal?`
+        : '¿El PR sombreado es normal o largo? Contá los cuadrados chicos.',
+      vista,
+      marcas: [
+        {
+          tipo: 'sombreado',
+          desdeMs: region.desdeMs,
+          hastaMs: region.hastaMs,
+          etiqueta: valorEnEnunciado ? `PR ${milisegundos(prMs)}` : 'PR',
+        },
+      ],
+      acierto: `${medida}: ${juicio}. El PR normal va de ${milisegundos(NORMAL.pr.minMs)} a ${milisegundos(NORMAL.pr.maxMs)} (3 a 5 cuadrados chicos).`,
+      error: `${medida}: ${juicio}. Normal entre ${milisegundos(NORMAL.pr.minMs)} y ${milisegundos(NORMAL.pr.maxMs)}; más largo es un bloqueo AV de primer grado.`,
+    },
+    azar,
+    [
+      { id: 'normal', etiqueta: 'Normal' },
+      { id: 'largo', etiqueta: 'Largo' },
+    ],
+    juicio,
+  )
+}
+
+/** ¿El QRS es angosto o ancho? Con la medida en el enunciado, o contando los cuadrados sobre el latido. */
+function retoJuzgarQrs(
+  base: BaseIntervalo,
+  azar: Azar,
+  qrsMs: number,
+  valorEnEnunciado: boolean,
+): Reto {
+  const { vista, region } = qrsMarcado(azar, qrsMs)
+  const juicio = juzgarQrs(qrsMs)
+  const medida = valorEnEnunciado
+    ? milisegundos(qrsMs)
+    : `${numero(cuadradosChicos(qrsMs), 1)} cuadrados chicos × ${milisegundos(MS_POR_CUADRADO_CHICO)} = ${milisegundos(qrsMs)}`
+  return conOpciones(
+    {
+      ...base,
+      enunciado: valorEnEnunciado
+        ? `El QRS mide ${milisegundos(qrsMs)}. ¿Angosto o ancho?`
+        : '¿El QRS sombreado es angosto o ancho? Contá los cuadrados chicos.',
+      vista,
+      marcas: [
+        {
+          tipo: 'sombreado',
+          desdeMs: region.desdeMs,
+          hastaMs: region.hastaMs,
+          etiqueta: valorEnEnunciado ? `QRS ${milisegundos(qrsMs)}` : 'QRS',
+        },
+      ],
+      acierto: `${medida}: ${juicio}. Hasta ${milisegundos(NORMAL.qrs.maxMs)} es angosto; más de ${milisegundos(NORMAL.qrs.bloqueoMs)} hace pensar en un bloqueo de rama.`,
+      error: `${medida}: ${juicio}. Angosto hasta ${milisegundos(NORMAL.qrs.maxMs)} (dos cuadrados chicos y medio); más que eso, ancho.`,
+    },
+    azar,
+    [
+      { id: 'angosto', etiqueta: 'Angosto (normal)' },
+      { id: 'ancho', etiqueta: 'Ancho' },
+    ],
+    juicio,
+  )
+}
+
+type OpcionesIntervalo = {
+  prMs?: number
+  qrsMs?: number
+  /** Si el enunciado dice la medida. Sin ella, la persona cuenta los cuadrados antes de juzgar. */
+  valorEnEnunciado?: boolean
+}
+
 function retoRitmoIntervalo(
   id: string,
   tipo: TipoRitmoIntervalo,
   azar: Azar,
   nivel: NivelId,
-  prDado?: number,
-  qrsDado?: number,
+  dados: OpcionesIntervalo = {},
 ): Reto {
   const base = { id, nivel, tipo }
+  const { prMs: prDado, qrsMs: qrsDado, valorEnEnunciado = true } = dados
   switch (tipo) {
     case 'ritmo-medir-pr': {
       const prMs = prDado ?? azar.elegir(PR_POSIBLES)
@@ -750,34 +848,8 @@ function retoRitmoIntervalo(
         error: `Mide ${chicos}: desde que arranca la P hasta que arranca el QRS. ${chicos} × ${milisegundos(MS_POR_CUADRADO_CHICO)} = ${milisegundos(prMs)}.`,
       }
     }
-    case 'ritmo-juzgar-pr': {
-      const prMs = prDado ?? azar.elegir(PR_POSIBLES)
-      const { vista, region } = prMarcado(azar, prMs)
-      const juicio = juzgarPr(prMs)
-      return conOpciones(
-        {
-          ...base,
-          enunciado: `El PR mide ${milisegundos(prMs)}. ¿Es normal?`,
-          vista,
-          marcas: [
-            {
-              tipo: 'sombreado',
-              desdeMs: region.desdeMs,
-              hastaMs: region.hastaMs,
-              etiqueta: `PR ${milisegundos(prMs)}`,
-            },
-          ],
-          acierto: `${milisegundos(prMs)} es ${juicio}: el PR normal va de ${milisegundos(NORMAL.pr.minMs)} a ${milisegundos(NORMAL.pr.maxMs)} (3 a 5 cuadrados chicos).`,
-          error: `${milisegundos(prMs)} es ${juicio}: normal entre ${milisegundos(NORMAL.pr.minMs)} y ${milisegundos(NORMAL.pr.maxMs)}; más largo es un bloqueo AV de primer grado.`,
-        },
-        azar,
-        [
-          { id: 'normal', etiqueta: 'Normal' },
-          { id: 'largo', etiqueta: 'Largo' },
-        ],
-        juicio,
-      )
-    }
+    case 'ritmo-juzgar-pr':
+      return retoJuzgarPr(base, azar, prDado ?? azar.elegir(PR_POSIBLES), valorEnEnunciado)
     case 'ritmo-medir-qrs': {
       const qrsMs = qrsDado ?? azar.elegir(QRS_POSIBLES)
       const { vista, region } = qrsMarcado(azar, qrsMs)
@@ -800,34 +872,8 @@ function retoRitmoIntervalo(
         error: `Mide ${chicos}: desde que arranca la Q hasta que termina la S. ${chicos} × ${milisegundos(MS_POR_CUADRADO_CHICO)} = ${milisegundos(qrsMs)}.`,
       }
     }
-    case 'ritmo-juzgar-qrs': {
-      const qrsMs = qrsDado ?? azar.elegir(QRS_JUZGABLES)
-      const { vista, region } = qrsMarcado(azar, qrsMs)
-      const juicio = juzgarQrs(qrsMs)
-      return conOpciones(
-        {
-          ...base,
-          enunciado: `El QRS mide ${milisegundos(qrsMs)}. ¿Angosto o ancho?`,
-          vista,
-          marcas: [
-            {
-              tipo: 'sombreado',
-              desdeMs: region.desdeMs,
-              hastaMs: region.hastaMs,
-              etiqueta: `QRS ${milisegundos(qrsMs)}`,
-            },
-          ],
-          acierto: `${milisegundos(qrsMs)}: ${juicio}. Hasta ${milisegundos(NORMAL.qrs.maxMs)} es angosto; más de ${milisegundos(NORMAL.qrs.bloqueoMs)} hace pensar en un bloqueo de rama.`,
-          error: `${milisegundos(qrsMs)} es ${juicio}: angosto hasta ${milisegundos(NORMAL.qrs.maxMs)} (dos cuadrados chicos y medio); más que eso, ancho.`,
-        },
-        azar,
-        [
-          { id: 'angosto', etiqueta: 'Angosto (normal)' },
-          { id: 'ancho', etiqueta: 'Ancho' },
-        ],
-        juicio,
-      )
-    }
+    case 'ritmo-juzgar-qrs':
+      return retoJuzgarQrs(base, azar, qrsDado ?? azar.elegir(QRS_JUZGABLES), valorEnEnunciado)
   }
 }
 
@@ -850,8 +896,11 @@ export function generarReto(nivel: NivelId, tipo: TipoReto, azar: Azar, numero: 
 
 /**
  * La lectura completa: una tira con un número entero de cuadrados grandes entre dos R, y sobre
- * ella la secuencia de preguntas de una lectura ordenada. El PR y el QRS de la tira se preguntan
- * sobre un latido ampliado dibujado con esos mismos valores; sin onda P no se pregunta el PR.
+ * ella la secuencia de preguntas de una lectura ordenada: ritmo, frecuencia (regla del 300 si es
+ * regular, conteo en 6 s si no), onda P, PR y QRS. Ningún enunciado dice una medida: la persona
+ * cuenta los cuadrados sobre la tira, así no se aprende el resultado sin leerla. El PR y el QRS
+ * se preguntan sobre un latido ampliado dibujado con esos mismos valores; sin P no se pregunta
+ * el PR.
  */
 export function generarLectura(azar: Azar, numero: number): Reto[] {
   const prMs = azar.elegir(PR_POSIBLES)
@@ -870,35 +919,52 @@ export function generarLectura(azar: Azar, numero: number): Reto[] {
   const [primero, segundo] = latidosVisibles(tira)
   if (!primero || !segundo) throw new Error('La lectura necesita dos R visibles')
   const prefijo = `lectura-${numero}`
-  const retos: Reto[] = []
+  const retos: Reto[] = [retoRitmoTira(`${prefijo}-ritmo`, 'ritmo-regular', azar, 'lectura', tira)]
   if (ritmo === 'regular') {
-    const frecuencia = conOpciones(
-      {
-        id: `${prefijo}-frecuencia`,
-        nivel: 'lectura',
-        tipo: 'frecuencia-regla-300',
-        enunciado: `Primero, la frecuencia: entre las dos R hay ${cuadrados} cuadrados grandes. ¿Cuánto es?`,
-        vista: { tipo: 'tira', tira },
-        marcas: [
-          { tipo: 'linea', enMs: primero.rMs, etiqueta: 'R' },
-          { tipo: 'linea', enMs: segundo.rMs, etiqueta: 'R' },
-        ],
-        acierto: `${CUADRADOS_GRANDES_POR_MINUTO} ÷ ${cuadrados} = ${latidosPorMinuto(lpm)}: ${juzgarFrecuencia(lpm)}.`,
-        error: `${CUADRADOS_GRANDES_POR_MINUTO} ÷ ${cuadrados} = ${latidosPorMinuto(lpm)}. Secuencia: ${SECUENCIA_300.join(', ')}.`,
-      },
-      azar,
-      OPCIONES_300,
-      String(lpm),
+    retos.push(
+      conOpciones(
+        {
+          id: `${prefijo}-frecuencia`,
+          nivel: 'lectura',
+          tipo: 'frecuencia-regla-300',
+          enunciado:
+            'Es regular: contá los cuadrados grandes entre las dos R marcadas. ¿Qué frecuencia es?',
+          vista: { tipo: 'tira', tira },
+          marcas: [
+            { tipo: 'linea', enMs: primero.rMs, etiqueta: 'R' },
+            { tipo: 'linea', enMs: segundo.rMs, etiqueta: 'R' },
+          ],
+          acierto: `${cuadrados} cuadrados grandes: ${CUADRADOS_GRANDES_POR_MINUTO} ÷ ${cuadrados} = ${latidosPorMinuto(lpm)}, ${juzgarFrecuencia(lpm)}.`,
+          error: `Hay ${cuadrados} cuadrados grandes: ${CUADRADOS_GRANDES_POR_MINUTO} ÷ ${cuadrados} = ${latidosPorMinuto(lpm)}. Secuencia: ${SECUENCIA_300.join(', ')}.`,
+        },
+        azar,
+        OPCIONES_300,
+        String(lpm),
+      ),
     )
-    retos.push(frecuencia)
+  } else {
+    retos.push(
+      retoContarQrs(
+        { id: `${prefijo}-frecuencia`, nivel: 'lectura', tipo: 'frecuencia-contar-qrs' },
+        tira,
+        'Es irregular, así que la regla del 300 no sirve: contá los QRS en los 6 segundos.',
+      ),
+    )
   }
-  retos.push(retoRitmoTira(`${prefijo}-ritmo`, 'ritmo-regular', azar, 'lectura', tira))
   retos.push(retoRitmoTira(`${prefijo}-p`, 'ritmo-p', azar, 'lectura', tira))
   if (ritmoTieneP(ritmo)) {
-    retos.push(retoRitmoIntervalo(`${prefijo}-pr`, 'ritmo-juzgar-pr', azar, 'lectura', prMs))
+    retos.push(
+      retoRitmoIntervalo(`${prefijo}-pr`, 'ritmo-juzgar-pr', azar, 'lectura', {
+        prMs,
+        valorEnEnunciado: false,
+      }),
+    )
   }
   retos.push(
-    retoRitmoIntervalo(`${prefijo}-qrs`, 'ritmo-juzgar-qrs', azar, 'lectura', undefined, qrsMs),
+    retoRitmoIntervalo(`${prefijo}-qrs`, 'ritmo-juzgar-qrs', azar, 'lectura', {
+      qrsMs,
+      valorEnEnunciado: false,
+    }),
   )
   return retos
 }

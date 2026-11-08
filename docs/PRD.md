@@ -45,7 +45,9 @@ clínico: es material de estudio y lo dice en pantalla.
 
 - **RF-01** (H-1): Cada nivel presenta retos generados al azar cuya respuesta correcta sale de los
   mismos parámetros que dibujan la tira; un reto errado vuelve, con otros números, más adelante en el
-  mismo nivel, y uno acertado no se repite.
+  mismo nivel, y uno acertado no se repite. En la lectura completa ningún enunciado dice una medida:
+  la persona cuenta los cuadrados sobre la tira antes de juzgar, así no se aprende el resultado sin
+  leerla.
 - **RF-02** (H-1): Al responder, la pantalla dice si estuvo bien o mal, con una línea de explicación
   que incluye la respuesta correcta, y recién entonces ofrece «Siguiente».
 - **RF-03** (H-1): El nivel se completa al alcanzar su meta de aciertos; el cierre muestra aciertos,
