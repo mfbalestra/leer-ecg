@@ -4,16 +4,99 @@
 //
 // Uso:
 //   <TiraEcg tira={tira} etiqueta="Tira de seis segundos" marcas={marcas} />
+//   <TiraEcg … evidencia={respondida ? reto.evidencia : []} />  la prueba de la respuesta
 //   <TiraEcg tira={tira} etiqueta="Un latido" zonas={zonas} onZona={(id) => responder(id)} />
-// Estados: zonas en reposo, con foco, elegida correcta, elegida incorrecta y deshabilitadas.
+// Estados: zonas en reposo, con foco, elegida correcta, elegida incorrecta y deshabilitadas; sin
+// evidencia o con ella (tramos sombreados alternados, R, rótulos arriba o al pie del papel).
 
 import { CircleCheck, CircleX } from 'lucide-react'
 import { useId } from 'react'
 
+import { ALTO_TIRA_MM } from '@/lib/tira'
 import { cn } from '@/lib/utils'
 import type { Tira } from '@/motor/latido'
 import { msAMm, mvAMm } from '@/motor/papel'
 import type { Marca, Zona } from '@/motor/retos'
+
+/** Instantes donde una marca traza una línea vertical: la R, o los bordes de una zona sombreada. */
+function lineasDe(marca: Marca): number[] {
+  switch (marca.tipo) {
+    case 'linea':
+      return [marca.enMs]
+    case 'sombreado':
+    case 'ventana':
+      return [marca.desdeMs, marca.hastaMs]
+    case 'tramo':
+    case 'rotulo':
+      return []
+  }
+}
+
+const ROTULO =
+  'pequeno pointer-events-none rounded-sm bg-papel/90 font-medium whitespace-nowrap text-trazo'
+
+/** El rótulo de una marca, arriba o al pie del papel; los de la evidencia llevan `data-evidencia`. */
+function Rotulo({
+  marca,
+  porcentaje,
+  evidencia,
+}: {
+  marca: Marca
+  porcentaje: (ms: number) => string
+  evidencia: boolean
+}) {
+  const datos = evidencia ? { 'data-evidencia': marca.tipo } : {}
+  if (marca.tipo === 'tramo') {
+    // Una caja del ancho del tramo: el rótulo se centra en ella y, si es omitible, se oculta
+    // cuando la caja queda más angosta que él.
+    return (
+      <div
+        className={cn(
+          'pointer-events-none absolute flex justify-center',
+          marca.abajo ? 'bottom-1' : 'top-1',
+          marca.omitible && '@container',
+        )}
+        style={{
+          left: porcentaje(marca.desdeMs),
+          width: porcentaje(marca.hastaMs - marca.desdeMs),
+        }}
+        aria-hidden="true"
+      >
+        <span
+          className={cn(
+            ROTULO,
+            'px-1 tabular-nums',
+            // Omitible: fuera si no entra en su tramo, o en una tira angosta (el celular en
+            // vertical), donde taparía el trazo.
+            marca.omitible && '@max-[3.5rem]:hidden @max-[40rem]/tira:hidden',
+          )}
+          {...datos}
+        >
+          {marca.etiqueta}
+        </span>
+      </div>
+    )
+  }
+  const desde = marca.tipo === 'linea' || marca.tipo === 'rotulo' ? marca.enMs : marca.desdeMs
+  const hasta = marca.tipo === 'linea' || marca.tipo === 'rotulo' ? marca.enMs : marca.hastaMs
+  return (
+    <span
+      className={cn(
+        ROTULO,
+        'absolute -translate-x-1/2',
+        marca.tipo === 'rotulo' ? 'bottom-1 px-1 tabular-nums' : 'top-1 px-1.5',
+        // En una tira angosta (el celular en vertical) las R de la evidencia taparían los picos:
+        // queda la línea, sin el rótulo.
+        evidencia && marca.tipo === 'linea' && '@max-[40rem]/tira:hidden',
+      )}
+      style={{ left: porcentaje((desde + hasta) / 2) }}
+      aria-hidden="true"
+      {...datos}
+    >
+      {marca.etiqueta}
+    </span>
+  )
+}
 
 export type EstadoZonas = {
   elegida: string | null
@@ -33,6 +116,8 @@ type Props = {
   /** Nombre accesible del dibujo; no debe revelar la respuesta. */
   etiqueta: string
   marcas?: readonly Marca[]
+  /** La prueba de la respuesta: se pasa sólo después de responder. */
+  evidencia?: readonly Marca[]
   zonas?: readonly Zona[]
   estadoZonas?: EstadoZonas
   onZona?: (id: string) => void
@@ -49,10 +134,11 @@ export function TiraEcg({
   tira,
   etiqueta,
   marcas = [],
+  evidencia = [],
   zonas = [],
   estadoZonas = { elegida: null, correcta: null },
   onZona,
-  altoMm = 24,
+  altoMm = ALTO_TIRA_MM,
   baseMm = 7,
   maxPxPorMm,
   pulso = false,
@@ -72,7 +158,7 @@ export function TiraEcg({
 
   return (
     <div
-      className="relative w-full rounded-lg border border-papel-linea-gruesa bg-papel"
+      className="@container/tira relative w-full rounded-lg border border-papel-linea-gruesa bg-papel"
       style={maxPxPorMm ? { maxWidth: `${anchoMm * maxPxPorMm}px` } : undefined}
     >
       <svg
@@ -100,6 +186,18 @@ export function TiraEcg({
           </pattern>
         </defs>
         <rect width={anchoMm} height={altoMm} fill={`url(#${idPatron})`} />
+        {evidencia.map((marca, i) =>
+          marca.tipo === 'tramo' ? (
+            <rect
+              key={`evidencia-${i}`}
+              x={msAMm(marca.desdeMs)}
+              y={0}
+              width={msAMm(marca.hastaMs - marca.desdeMs)}
+              height={altoMm}
+              className={marca.alterno ? 'fill-trazo-resalte/10' : 'fill-trazo-resalte/25'}
+            />
+          ) : null,
+        )}
         {marcas.map((marca, i) => {
           if (marca.tipo === 'sombreado' || marca.tipo === 'ventana') {
             return (
@@ -126,10 +224,8 @@ export function TiraEcg({
           vectorEffect="non-scaling-stroke"
           fill="none"
         />
-        {marcas.map((marca, i) => {
-          const lineas: number[] =
-            marca.tipo === 'linea' ? [marca.enMs] : [marca.desdeMs, marca.hastaMs]
-          return lineas.map((ms, j) => (
+        {[...marcas, ...evidencia.filter((m) => m.tipo === 'linea')].map((marca, i) => {
+          return lineasDe(marca).map((ms, j) => (
             <line
               key={`${i}-${j}`}
               x1={msAMm(ms)}
@@ -145,21 +241,12 @@ export function TiraEcg({
         })}
       </svg>
 
-      {marcas.map((marca, i) => {
-        const desde = marca.tipo === 'linea' ? marca.enMs : marca.desdeMs
-        const hasta = marca.tipo === 'linea' ? marca.enMs : marca.hastaMs
-        const centro = (desde + hasta) / 2
-        return (
-          <span
-            key={i}
-            className="pequeno pointer-events-none absolute top-1 -translate-x-1/2 rounded-sm bg-papel/90 px-1.5 font-medium text-trazo"
-            style={{ left: porcentaje(centro) }}
-            aria-hidden="true"
-          >
-            {marca.etiqueta}
-          </span>
-        )
-      })}
+      {marcas.map((marca, i) => (
+        <Rotulo key={i} marca={marca} porcentaje={porcentaje} evidencia={false} />
+      ))}
+      {evidencia.map((marca, i) => (
+        <Rotulo key={`evidencia-${i}`} marca={marca} porcentaje={porcentaje} evidencia />
+      ))}
 
       {zonas.length > 0 && (
         <div className="absolute inset-0" role="group" aria-label="Partes del latido para tocar">

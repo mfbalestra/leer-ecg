@@ -238,3 +238,30 @@ test('escritorio: la tira apaisada no aparece y los botones conservan su alto', 
   const niveles = await page.getByRole('button', { name: 'Niveles' }).boundingBox()
   expect(niveles?.height).toBe(28)
 })
+
+test.describe('tira apaisada: prueba de la respuesta y atajos (844 × 390, táctil)', () => {
+  test.use({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true })
+
+  test('el dígito responde adentro, sin número a la vista, y la prueba aparece sobre la tira', async ({
+    page,
+  }) => {
+    const sesion = await hastaLaPrimeraTira(page)
+    const reto = sesion.actual
+    const modo = page.getByRole('dialog')
+    await expect(modo).toBeVisible()
+    if (reto.respuesta.modo !== 'opciones') throw new Error('La primera tira debía tener opciones')
+    // Con el dedo no se ve el número, pero el atajo funciona con un teclado conectado.
+    await expect(modo.locator('kbd').first()).toBeHidden()
+    await expect(modo.locator('[data-evidencia]')).toHaveCount(0)
+
+    await page.keyboard.press('1')
+    const primera = reto.respuesta.opciones[0]
+    if (!primera) throw new Error('El reto no tiene opciones')
+    await expect(modo.getByRole('status', { name: 'Resultado del reto' })).toContainText(
+      primera.id === reto.respuesta.correcta ? 'Bien.' : 'No era esa.',
+    )
+    await expect(modo.locator('[data-evidencia]')).toHaveCount(reto.evidencia.length)
+    await tiraEntera(page, modo)
+    await todosLosChequeos(page, 'apaisada-con-prueba')
+  })
+})

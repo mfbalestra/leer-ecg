@@ -41,6 +41,7 @@ chromium` once)
   relative base and stamps version, commit and date into the build.
 - Visual acceptance: pending the user (2026-11-07). The identity was built on the direct route
   without the three-proposal round because the owner asked to implement at once.
+- Branch strategy: one new branch per change, integrated into `main` afterwards (2026-11-08).
 
 ## Maintaining these instructions
 

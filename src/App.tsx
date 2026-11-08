@@ -68,8 +68,10 @@ export default function App() {
     actualizar(nuevo)
   }
 
+  // `@container`: la tira de un reto se ensancha hasta 100cqw, el ancho útil de la página sin el
+  // margen lateral (100vw sumaría la barra de desplazamiento).
   return (
-    <main className="min-h-dvh px-4 py-6 sm:px-6 sm:py-10">
+    <main className="@container min-h-dvh px-4 py-6 sm:px-6 sm:py-10">
       {pantalla.nombre === 'inicio' && (
         <Inicio
           progreso={progreso}

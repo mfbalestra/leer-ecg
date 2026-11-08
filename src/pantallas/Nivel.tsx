@@ -1,9 +1,19 @@
 // La pantalla de un nivel: un reto por vez, corrección inmediata y «Siguiente». Al llegar a la meta
 // muestra el cierre del nivel. La lectura completa suma el reloj. Un reto con tira se puede leer y
-// responder en la tira apaisada: con el botón en el celular, o sola al girar el teléfono.
+// responder en la tira apaisada: con el botón en el celular, o sola al girar el teléfono. Desde
+// 768 px la tira sale de la columna de lectura, tan ancha como entre en la ventana; al responder
+// muestra encima la prueba de la respuesta. Cada opción se elige con la tecla de su número.
 
 import { ArrowLeft, CircleCheck, CircleX, Expand, Flame } from 'lucide-react'
-import { useEffect, useEffectEvent, useRef, useState, type RefObject } from 'react'
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react'
 
 import { Conteo } from '@/componentes/Conteo'
 import { ModoApaisado } from '@/componentes/ModoApaisado'
@@ -12,7 +22,8 @@ import { Papel } from '@/componentes/Papel'
 import { TiraEcg, type PropsZonas } from '@/componentes/TiraEcg'
 import { Button } from '@/components/ui/button'
 import { FOCO_PROGRAMATICO } from '@/lib/foco'
-import { TELEFONO_APAISADO, VERTICAL, useCoincide } from '@/lib/medios'
+import { anchoParaAlto } from '@/lib/tira'
+import { ANCHO_ESCRITORIO, TELEFONO_APAISADO, VERTICAL, useCoincide } from '@/lib/medios'
 import { numero, segundos } from '@/motor/formato'
 import { ahora } from '@/motor/reloj'
 import {
@@ -46,12 +57,14 @@ type Fase =
 
 type PropsVista = {
   reto: Reto
+  respondida: boolean
   zonas: PropsZonas
+  refTira: RefObject<HTMLDivElement | null>
   refBotonApaisada: RefObject<HTMLButtonElement | null>
   onApaisada: () => void
 }
 
-function VistaReto({ reto, zonas, refBotonApaisada, onApaisada }: PropsVista) {
+function VistaReto({ reto, respondida, zonas, refTira, refBotonApaisada, onApaisada }: PropsVista) {
   const vista = reto.vista
   switch (vista.tipo) {
     case 'papel':
@@ -70,15 +83,28 @@ function VistaReto({ reto, zonas, refBotonApaisada, onApaisada }: PropsVista) {
           />
         </div>
       )
-    case 'tira':
+    case 'tira': {
+      // Desde 768 px la tira sale de la columna: tan ancha como su alto disponible permita
+      // (`--alto-tira`, que mide `useAltoTira`), nunca más angosta que la columna ni más ancha que
+      // la página sin su margen (100cqw de `main`). Se centra sobre la columna con margen negativo.
+      const ancho = {
+        '--ancho-tira': `clamp(100%, ${anchoParaAlto(vista.tira, 'var(--alto-tira, 100dvh)')}, 100cqw)`,
+      } as CSSProperties
       return (
         <div className="flex flex-col gap-2">
-          <TiraEcg
-            tira={vista.tira}
-            etiqueta={`Tira de ${segundos(vista.tira.duracionMs / 1000, 0)} sobre papel milimetrado`}
-            marcas={reto.marcas}
-            {...zonas}
-          />
+          <div
+            ref={refTira}
+            className="md:ms-[calc((100%_-_var(--ancho-tira))/2)] md:w-(--ancho-tira)"
+            style={ancho}
+          >
+            <TiraEcg
+              tira={vista.tira}
+              etiqueta={`Tira de ${segundos(vista.tira.duracionMs / 1000, 0)} sobre papel milimetrado`}
+              marcas={reto.marcas}
+              evidencia={respondida ? reto.evidencia : []}
+              {...zonas}
+            />
+          </div>
           {/* Sólo en el celular: desde 768 px la tira ya entra a lo ancho. */}
           <div className="flex justify-end md:hidden">
             <Button
@@ -94,6 +120,7 @@ function VistaReto({ reto, zonas, refBotonApaisada, onApaisada }: PropsVista) {
           </div>
         </div>
       )
+    }
     case 'texto':
       return null
   }
@@ -255,9 +282,18 @@ type PropsRespuesta = {
   onContestar: (dada: RespuestaDada) => void
   /** En la tira apaisada: opciones en una fila y contador de 44 px a cualquier ancho. */
   apaisada?: boolean
+  /** Las teclas numéricas eligen: sólo en la vista que se ve, la pantalla o la tira apaisada. */
+  atajos: boolean
 }
 
-function Respuesta({ reto, dada, correctaId, onContestar, apaisada = false }: PropsRespuesta) {
+function Respuesta({
+  reto,
+  dada,
+  correctaId,
+  onContestar,
+  apaisada = false,
+  atajos,
+}: PropsRespuesta) {
   const respondida = dada !== null
   switch (reto.respuesta.modo) {
     case 'opciones':
@@ -268,6 +304,7 @@ function Respuesta({ reto, dada, correctaId, onContestar, apaisada = false }: Pr
           correcta={respondida ? correctaId : null}
           onElegir={onContestar}
           disposicion={apaisada ? 'fila' : 'columnas'}
+          atajos={atajos}
         />
       )
     case 'conteo':
@@ -319,6 +356,59 @@ function useTiraApaisada(conTira: boolean) {
   }
 }
 
+/**
+ * Lo que ocupa el resultado con el veredicto y dos renglones de explicación: borde, relleno `p-4`
+ * y tres renglones de `cuerpo` (17 px × 1,55). Se reserva antes de responder para que la tira no
+ * cambie de tamaño al aparecer el resultado; uno más largo la achica.
+ */
+const RESULTADO_RESERVADO_PX = 2 + 2 * 16 + 3 * 17 * 1.55
+/** Aire bajo «Siguiente» para que su anillo de foco (2 px a 2 px del botón) también entre. */
+const AIRE_INFERIOR_PX = 8
+
+/**
+ * Desde 768 px, el alto que puede tener la tira para que el reto respondido entre en la ventana
+ * sin desplazarse: encabezado, avance, consigna, tira, respuesta, resultado y «Siguiente». Lo
+ * escribe en la sección como `--alto-tira`; la tira toma el ancho que corresponde a ese alto con
+ * la misma regla de ajuste a una caja que la tira apaisada. Vuelve a medir cuando cambia el
+ * contenido o la ventana.
+ */
+function useAltoTira(
+  seccion: RefObject<HTMLElement | null>,
+  tira: RefObject<HTMLElement | null>,
+  resultado: RefObject<HTMLElement | null>,
+  activa: boolean,
+  clave: string,
+) {
+  useLayoutEffect(() => {
+    const s = seccion.current
+    const t = tira.current
+    const r = resultado.current
+    if (!activa || !s || !t || !r) return
+    const medir = () => {
+      // Alturas de maquetación (`offsetHeight`): el pulso del trazo escala la tira al acertar y no
+      // debe contar.
+      const altoResultado = r.offsetHeight
+      const resto =
+        s.offsetHeight -
+        t.offsetHeight -
+        altoResultado +
+        Math.max(altoResultado, RESULTADO_RESERVADO_PX)
+      const arriba = s.getBoundingClientRect().top + window.scrollY
+      const alto = Math.floor(window.innerHeight - arriba - resto - AIRE_INFERIOR_PX)
+      s.style.setProperty('--alto-tira', `${alto}px`)
+    }
+    medir()
+    const observador = new ResizeObserver(medir)
+    observador.observe(s)
+    window.addEventListener('resize', medir)
+    return () => {
+      observador.disconnect()
+      window.removeEventListener('resize', medir)
+      s.style.removeProperty('--alto-tira')
+    }
+  }, [seccion, tira, resultado, activa, clave])
+}
+
 export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
   const datos = nivelPorId(nivel)
   const [sesion, setSesion] = useState<Sesion>(() => crearSesion(nivel, semilla))
@@ -329,10 +419,21 @@ export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
   const botonApaisada = useRef<HTMLButtonElement>(null)
   const tituloApaisada = useRef<HTMLHeadingElement>(null)
   const siguienteApaisada = useRef<HTMLButtonElement>(null)
+  const seccion = useRef<HTMLElement>(null)
+  const tiraAncha = useRef<HTMLDivElement>(null)
+  const filaResultado = useRef<HTMLDivElement>(null)
 
   const conTira = sesion.actual.vista.tipo === 'tira'
   const modo = useTiraApaisada(conTira)
   const apaisada = modo.abierta
+  const escritorio = useCoincide(ANCHO_ESCRITORIO)
+  useAltoTira(
+    seccion,
+    tiraAncha,
+    filaResultado,
+    escritorio && conTira && fase.nombre !== 'cierre',
+    sesion.actual.id,
+  )
 
   const enfocarSiguiente = useEffectEvent(() => {
     if (fase.nombre !== 'respondida') return
@@ -425,7 +526,7 @@ export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
       : { pulso: correcto }
 
   return (
-    <section className="mx-auto flex w-full max-w-3xl flex-col gap-5">
+    <section ref={seccion} className="mx-auto flex w-full max-w-3xl flex-col gap-5">
       <Encabezado datos={datos} racha={sesion.racha} onSalir={onSalir} />
       <BarraAvance {...avance(sesion)} />
       <h2 ref={enunciado} tabIndex={-1} className={`enunciado ${FOCO_PROGRAMATICO}`}>
@@ -433,28 +534,40 @@ export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
       </h2>
       <VistaReto
         reto={reto}
+        respondida={respondida}
         zonas={zonas}
+        refTira={tiraAncha}
         refBotonApaisada={botonApaisada}
         onApaisada={modo.abrir}
       />
-      <Respuesta reto={reto} dada={dada} correctaId={correctaId} onContestar={contestar} />
-      {/* Con la tira apaisada abierta, el resultado se anuncia desde ella: esta región calla para
-          que no se oiga dos veces (el diálogo oculta el fondo salvo las regiones vivas). */}
-      <div
-        role="status"
-        aria-label="Resultado del reto"
-        aria-live={apaisada ? 'off' : 'polite'}
-        className="min-h-6"
-      >
-        {respondida && <Retroalimentacion reto={reto} correcto={correcto} />}
-      </div>
-      {respondida && (
-        <div className="flex justify-end">
-          <Button ref={botonSiguiente} size="lg" onClick={siguiente}>
-            {textoSiguiente}
-          </Button>
+      <Respuesta
+        reto={reto}
+        dada={dada}
+        correctaId={correctaId}
+        onContestar={contestar}
+        atajos={!apaisada}
+      />
+      {/* Desde 768 px «Siguiente» va al lado del resultado: así la tira ancha, el resultado y el
+          botón entran en la ventana. Más angosto, debajo, como siempre. */}
+      <div ref={filaResultado} className="flex flex-col gap-5 md:flex-row md:items-center">
+        {/* Con la tira apaisada abierta, el resultado se anuncia desde ella: esta región calla
+            para que no se oiga dos veces (el diálogo oculta el fondo salvo las regiones vivas). */}
+        <div
+          role="status"
+          aria-label="Resultado del reto"
+          aria-live={apaisada ? 'off' : 'polite'}
+          className="min-h-6 md:grow"
+        >
+          {respondida && <Retroalimentacion reto={reto} correcto={correcto} />}
         </div>
-      )}
+        {respondida && (
+          <div className="flex justify-end">
+            <Button ref={botonSiguiente} size="lg" onClick={siguiente}>
+              {textoSiguiente}
+            </Button>
+          </div>
+        )}
+      </div>
       {conTira && (
         <ModoApaisado
           abierto={apaisada}
@@ -471,6 +584,7 @@ export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
               correctaId={correctaId}
               onContestar={contestar}
               apaisada
+              atajos={apaisada}
             />
           }
           resultado={
