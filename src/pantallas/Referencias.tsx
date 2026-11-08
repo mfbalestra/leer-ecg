@@ -17,7 +17,7 @@ import {
   VELOCIDAD_MM_POR_S,
 } from '@/motor/papel'
 import { FUENTES, NORMAL, type Fuente } from '@/motor/valores'
-import { FOCO_PROGRAMATICO } from '@/pantallas/Nivel'
+import { FOCO_PROGRAMATICO } from '@/lib/foco'
 
 type Fila = { valor: string; dato: string; fuente: Fuente }
 

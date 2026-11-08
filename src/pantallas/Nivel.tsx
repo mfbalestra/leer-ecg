@@ -1,14 +1,18 @@
 // La pantalla de un nivel: un reto por vez, corrección inmediata y «Siguiente». Al llegar a la meta
-// muestra el cierre del nivel. La lectura completa suma el reloj.
+// muestra el cierre del nivel. La lectura completa suma el reloj. Un reto con tira se puede leer y
+// responder en la tira apaisada: con el botón en el celular, o sola al girar el teléfono.
 
-import { ArrowLeft, CircleCheck, CircleX, Flame } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, CircleCheck, CircleX, Expand, Flame } from 'lucide-react'
+import { useEffect, useEffectEvent, useRef, useState, type RefObject } from 'react'
 
 import { Conteo } from '@/componentes/Conteo'
+import { ModoApaisado } from '@/componentes/ModoApaisado'
 import { Opciones } from '@/componentes/Opciones'
 import { Papel } from '@/componentes/Papel'
 import { TiraEcg, type PropsZonas } from '@/componentes/TiraEcg'
 import { Button } from '@/components/ui/button'
+import { FOCO_PROGRAMATICO } from '@/lib/foco'
+import { TELEFONO_APAISADO, VERTICAL, useCoincide } from '@/lib/medios'
 import { numero, segundos } from '@/motor/formato'
 import { ahora } from '@/motor/reloj'
 import {
@@ -19,10 +23,6 @@ import {
   type Reto,
 } from '@/motor/retos'
 import { avance, avanzar, crearSesion, responder, terminada, type Sesion } from '@/motor/sesion'
-
-/** Un título que recibe el foco por código: sin anillo al hacer clic, con anillo desde el teclado. */
-export const FOCO_PROGRAMATICO =
-  'outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-4 focus-visible:outline-ring'
 
 export type CierreNivel = {
   nivel: NivelId
@@ -44,7 +44,14 @@ type Fase =
   | { nombre: 'respondida'; correcto: boolean; dada: RespuestaDada }
   | { nombre: 'cierre'; segundos: number }
 
-function VistaReto({ reto, zonas }: { reto: Reto; zonas: PropsZonas }) {
+type PropsVista = {
+  reto: Reto
+  zonas: PropsZonas
+  refBotonApaisada: RefObject<HTMLButtonElement | null>
+  onApaisada: () => void
+}
+
+function VistaReto({ reto, zonas, refBotonApaisada, onApaisada }: PropsVista) {
   const vista = reto.vista
   switch (vista.tipo) {
     case 'papel':
@@ -65,19 +72,62 @@ function VistaReto({ reto, zonas }: { reto: Reto; zonas: PropsZonas }) {
       )
     case 'tira':
       return (
-        <TiraEcg
-          tira={vista.tira}
-          etiqueta={`Tira de ${segundos(vista.tira.duracionMs / 1000, 0)} sobre papel milimetrado`}
-          marcas={reto.marcas}
-          {...zonas}
-        />
+        <div className="flex flex-col gap-2">
+          <TiraEcg
+            tira={vista.tira}
+            etiqueta={`Tira de ${segundos(vista.tira.duracionMs / 1000, 0)} sobre papel milimetrado`}
+            marcas={reto.marcas}
+            {...zonas}
+          />
+          {/* Sólo en el celular: desde 768 px la tira ya entra a lo ancho. */}
+          <div className="flex justify-end md:hidden">
+            <Button
+              ref={refBotonApaisada}
+              variant="outline"
+              size="lg"
+              className="px-3"
+              onClick={onApaisada}
+            >
+              <Expand data-icon="inline-start" aria-hidden="true" />
+              Ver la tira apaisada
+            </Button>
+          </div>
+        </div>
       )
     case 'texto':
       return null
   }
 }
 
-function Retroalimentacion({ reto, correcto }: { reto: Reto; correcto: boolean }) {
+type PropsRetroalimentacion = {
+  reto: Reto
+  correcto: boolean
+  /** En la tira apaisada: el veredicto y la explicación en el mismo renglón, con menos relleno. */
+  compacta?: boolean
+}
+
+function Retroalimentacion({ reto, correcto, compacta = false }: PropsRetroalimentacion) {
+  if (compacta) {
+    return (
+      <div
+        className={
+          correcto
+            ? 'flex items-start gap-2 rounded-lg border border-exito bg-exito-suave px-3 py-2 text-exito'
+            : 'flex items-start gap-2 rounded-lg border border-peligro bg-peligro-suave px-3 py-2 text-peligro'
+        }
+      >
+        {correcto ? (
+          <CircleCheck className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+        ) : (
+          <CircleX className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+        )}
+        <p className="cuerpo">
+          <span className="font-semibold">{correcto ? 'Bien.' : 'No era esa.'}</span>{' '}
+          {correcto ? reto.acierto : reto.error}
+        </p>
+      </div>
+    )
+  }
   return (
     <div
       className={
@@ -172,7 +222,7 @@ function Encabezado({
         aria-label={`Racha de ${numero(racha)}`}
       >
         <Flame className="size-4" aria-hidden="true" />
-        <span className="tabular-nums">{numero(racha)}</span> seguidos
+        <span className="tabular-nums">{numero(racha)}</span> {racha === 1 ? 'seguido' : 'seguidos'}
       </p>
     </header>
   )
@@ -203,9 +253,11 @@ type PropsRespuesta = {
   dada: RespuestaDada | null
   correctaId: string
   onContestar: (dada: RespuestaDada) => void
+  /** En la tira apaisada: opciones en una fila y contador de 44 px a cualquier ancho. */
+  apaisada?: boolean
 }
 
-function Respuesta({ reto, dada, correctaId, onContestar }: PropsRespuesta) {
+function Respuesta({ reto, dada, correctaId, onContestar, apaisada = false }: PropsRespuesta) {
   const respondida = dada !== null
   switch (reto.respuesta.modo) {
     case 'opciones':
@@ -215,6 +267,7 @@ function Respuesta({ reto, dada, correctaId, onContestar }: PropsRespuesta) {
           elegida={dada === null ? null : String(dada)}
           correcta={respondida ? correctaId : null}
           onElegir={onContestar}
+          disposicion={apaisada ? 'fila' : 'columnas'}
         />
       )
     case 'conteo':
@@ -225,6 +278,7 @@ function Respuesta({ reto, dada, correctaId, onContestar }: PropsRespuesta) {
           maximo={reto.respuesta.maximo}
           unidad={reto.respuesta.unidad}
           deshabilitado={respondida}
+          tactil={apaisada}
           onResponder={onContestar}
         />
       )
@@ -235,6 +289,36 @@ function Respuesta({ reto, dada, correctaId, onContestar }: PropsRespuesta) {
   }
 }
 
+/**
+ * Cuándo se ve la tira apaisada. Se abre con su botón o sola, con el teléfono girado. Abierta con
+ * el botón, queda abierta aunque el teléfono gire; abierta sola, se cierra al volver a la vertical.
+ * Cerrada con «Salir» o Escape, no vuelve a abrirse sola hasta que el teléfono pase por la vertical.
+ * Sólo en retos con tira: uno sin tira la cierra.
+ */
+function useTiraApaisada(conTira: boolean) {
+  const telefonoApaisado = useCoincide(TELEFONO_APAISADO)
+  const vertical = useCoincide(VERTICAL)
+  const [porBoton, setPorBoton] = useState(false)
+  const [descartada, setDescartada] = useState(false)
+  const [apaisadoAntes, setApaisadoAntes] = useState(telefonoApaisado)
+  if (apaisadoAntes !== telefonoApaisado) {
+    setApaisadoAntes(telefonoApaisado)
+    if (!telefonoApaisado) setDescartada(false)
+  }
+  return {
+    abierta: conTira && (porBoton || (telefonoApaisado && !descartada)),
+    /** Con la pantalla en vertical, el contenido gira para leerse con el teléfono de costado. */
+    girada: vertical,
+    abrir: () => setPorBoton(true),
+    salir: () => {
+      setPorBoton(false)
+      if (telefonoApaisado) setDescartada(true)
+    },
+    /** Al pasar a un reto sin tira o terminar: lo abierto con el botón no se arrastra. */
+    olvidarBoton: () => setPorBoton(false),
+  }
+}
+
 export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
   const datos = nivelPorId(nivel)
   const [sesion, setSesion] = useState<Sesion>(() => crearSesion(nivel, semilla))
@@ -242,16 +326,37 @@ export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
   const [inicioMs, setInicioMs] = useState(() => ahora())
   const botonSiguiente = useRef<HTMLButtonElement>(null)
   const enunciado = useRef<HTMLHeadingElement>(null)
+  const botonApaisada = useRef<HTMLButtonElement>(null)
+  const tituloApaisada = useRef<HTMLHeadingElement>(null)
+  const siguienteApaisada = useRef<HTMLButtonElement>(null)
 
+  const conTira = sesion.actual.vista.tipo === 'tira'
+  const modo = useTiraApaisada(conTira)
+  const apaisada = modo.abierta
+
+  const enfocarSiguiente = useEffectEvent(() => {
+    if (fase.nombre !== 'respondida') return
+    ;(apaisada ? siguienteApaisada : botonSiguiente).current?.focus()
+  })
   useEffect(() => {
-    if (fase.nombre === 'respondida') botonSiguiente.current?.focus()
+    enfocarSiguiente()
   }, [fase])
 
   // Cada reto nuevo lleva el foco a su enunciado: «Siguiente» desaparece y el teclado no vuelve al
   // principio de la página.
+  const enfocarEnunciado = useEffectEvent(() => {
+    ;(apaisada ? tituloApaisada : enunciado).current?.focus()
+  })
   useEffect(() => {
-    enunciado.current?.focus()
+    enfocarEnunciado()
   }, [sesion.actual.id])
+
+  // Al cerrar, el foco vuelve al botón que la abre; si no se ve (desde 768 px o en un reto sin
+  // tira), al enunciado.
+  const focoAlCerrar = () => {
+    const boton = botonApaisada.current
+    return boton && boton.offsetParent !== null ? boton : enunciado.current
+  }
 
   const contestar = (dada: RespuestaDada) => {
     if (fase.nombre !== 'pregunta') return
@@ -262,10 +367,14 @@ export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
 
   const siguiente = () => {
     if (!terminada(sesion)) {
-      setSesion(avanzar(sesion))
+      const nueva = avanzar(sesion)
+      setSesion(nueva)
       setFase({ nombre: 'pregunta' })
+      // Un reto sin tira cierra la tira apaisada y muestra la pantalla de siempre.
+      if (nueva.actual.vista.tipo !== 'tira') modo.olvidarBoton()
       return
     }
+    modo.olvidarBoton()
     const transcurrido = Math.round((ahora() - inicioMs) / 1000)
     setFase({ nombre: 'cierre', segundos: transcurrido })
     onCierre({
@@ -281,6 +390,7 @@ export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
     setSesion(crearSesion(nivel, semilla + 1))
     setInicioMs(ahora())
     setFase({ nombre: 'pregunta' })
+    modo.olvidarBoton()
   }
 
   if (fase.nombre === 'cierre') {
@@ -300,6 +410,7 @@ export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
   const dada = fase.nombre === 'respondida' ? fase.dada : null
   const correcto = fase.nombre === 'respondida' && fase.correcto
   const correctaId = String(reto.respuesta.correcta)
+  const textoSiguiente = terminada(sesion) ? 'Ver resultado' : 'Siguiente'
   const zonas: PropsZonas =
     reto.respuesta.modo === 'zona'
       ? {
@@ -320,17 +431,62 @@ export function Nivel({ nivel, semilla, onSalir, onCierre }: Props) {
       <h2 ref={enunciado} tabIndex={-1} className={`enunciado ${FOCO_PROGRAMATICO}`}>
         {reto.enunciado}
       </h2>
-      <VistaReto reto={reto} zonas={zonas} />
+      <VistaReto
+        reto={reto}
+        zonas={zonas}
+        refBotonApaisada={botonApaisada}
+        onApaisada={modo.abrir}
+      />
       <Respuesta reto={reto} dada={dada} correctaId={correctaId} onContestar={contestar} />
-      <div role="status" aria-label="Resultado del reto" aria-live="polite" className="min-h-6">
+      {/* Con la tira apaisada abierta, el resultado se anuncia desde ella: esta región calla para
+          que no se oiga dos veces (el diálogo oculta el fondo salvo las regiones vivas). */}
+      <div
+        role="status"
+        aria-label="Resultado del reto"
+        aria-live={apaisada ? 'off' : 'polite'}
+        className="min-h-6"
+      >
         {respondida && <Retroalimentacion reto={reto} correcto={correcto} />}
       </div>
       {respondida && (
         <div className="flex justify-end">
           <Button ref={botonSiguiente} size="lg" onClick={siguiente}>
-            {terminada(sesion) ? 'Ver resultado' : 'Siguiente'}
+            {textoSiguiente}
           </Button>
         </div>
+      )}
+      {conTira && (
+        <ModoApaisado
+          abierto={apaisada}
+          girada={modo.girada}
+          reto={reto}
+          pulso={correcto}
+          refTitulo={tituloApaisada}
+          onSalir={modo.salir}
+          focoFinal={focoAlCerrar}
+          respuesta={
+            <Respuesta
+              reto={reto}
+              dada={dada}
+              correctaId={correctaId}
+              onContestar={contestar}
+              apaisada
+            />
+          }
+          resultado={
+            respondida ? <Retroalimentacion reto={reto} correcto={correcto} compacta /> : null
+          }
+          siguiente={
+            <Button
+              ref={siguienteApaisada}
+              size="lg"
+              className="min-h-11 shrink-0 px-4"
+              onClick={siguiente}
+            >
+              {textoSiguiente}
+            </Button>
+          }
+        />
       )}
     </section>
   )
