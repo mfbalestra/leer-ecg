@@ -6,6 +6,9 @@ package-lock.json
 test-results
 playwright-report
 
+# Copias de trabajo de otras sesiones: cada una se verifica en su propia rama
+.claude/worktrees
+
 # Generados o leídos byte a byte por sus propios scripts
 src/design-tokens.css
 design/tokens.json
