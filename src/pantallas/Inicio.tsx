@@ -42,7 +42,7 @@ export function Inicio({ progreso, onJugar, onReferencias }: Props) {
       <header className="flex flex-col gap-4">
         <div>
           <h1 ref={titulo} tabIndex={-1} className={`display ${FOCO_PROGRAMATICO}`}>
-            Leer las rayitas
+            Entrenador de ECG
           </h1>
           <p className="cuerpo mt-2 max-w-prose text-texto-tenue">
             Retos de medio minuto para aprender a leer un electrocardiograma: el papel, un latido,

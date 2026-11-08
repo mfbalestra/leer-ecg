@@ -1,4 +1,4 @@
-# Leer las rayitas — DESIGN.md
+# Entrenador de ECG — DESIGN.md
 
 ## Identity and atmosphere
 

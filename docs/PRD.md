@@ -1,4 +1,4 @@
-# Leer las rayitas
+# Entrenador de ECG
 
 Estado: borrador — 2026-11-07
 Versión: 1

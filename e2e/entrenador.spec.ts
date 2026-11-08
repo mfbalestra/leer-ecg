@@ -84,7 +84,7 @@ test('inicio: niveles, referencias y vuelta, accesibles y operables por teclado'
   page,
 }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Leer las rayitas' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Entrenador de ECG' })).toBeVisible()
   await expect(page.getByRole('listitem')).toHaveCount(5)
   await todosLosChequeos(page, 'inicio')
 
@@ -94,7 +94,7 @@ test('inicio: niveles, referencias y vuelta, accesibles y operables por teclado'
   await todosLosChequeos(page, 'referencias')
 
   await page.getByRole('button', { name: 'Inicio' }).click()
-  await expect(page.getByRole('heading', { name: 'Leer las rayitas' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Entrenador de ECG' })).toBeVisible()
 })
 
 test('nivel 1: acierto, error con explicación, avance y cierre; el progreso queda guardado', async ({
@@ -245,7 +245,7 @@ test('sin almacenamiento: la app juega igual y sólo deja de recordar el progres
   await contestarBien(page, sesion.actual)
   await expect(page.getByRole('status', { name: 'Resultado del reto' })).toContainText('Bien.')
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Leer las rayitas' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Entrenador de ECG' })).toBeVisible()
   await expect(page.getByText('Completado')).toHaveCount(0)
   expect(errores).toEqual([])
 })

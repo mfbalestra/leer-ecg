@@ -1,4 +1,4 @@
-# Leer las rayitas
+# Entrenador de ECG
 
 Entrenador interactivo para aprender a leer un electrocardiograma: retos cortos con corrección
 inmediata, en cinco niveles (el papel, un latido, la frecuencia, el ritmo y la lectura completa). Lo

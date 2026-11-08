@@ -1,6 +1,6 @@
 ---
 name: verificar-leer-ecg
-description: Levanta Leer las rayitas (leer-ecg) y ejercita sus pantallas en vivo - inicio, un nivel con acierto y error, el cierre de nivel y las referencias. Usar para "verificá la app", "levantá y probá", "probá que funcione" o "fijate si el entrenador anda". Do NOT use para correr los tests unitarios, para revisar código ni para un cambio que nadie ejecutó todavía.
+description: Levanta Entrenador de ECG (leer-ecg) y ejercita sus pantallas en vivo - inicio, un nivel con acierto y error, el cierre de nivel y las referencias. Usar para "verificá la app", "levantá y probá", "probá que funcione" o "fijate si el entrenador anda". Do NOT use para correr los tests unitarios, para revisar código ni para un cambio que nadie ejecutó todavía.
 ---
 
 # Verificar leer-ecg
@@ -17,7 +17,7 @@ reads nothing from `.env`.
 
 | Check                  | Command or URL                           | Expected                                                                              |
 | ---------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| Health                 | http://localhost:5199/                   | The page renders the heading «Leer las rayitas» and five levels                       |
+| Health                 | http://localhost:5199/                   | The page renders the heading «Entrenador de ECG» and five levels                      |
 | Version                | `npm run build` then `dist/version.json` | `version`, `commit` and `fecha` match `package.json` and `git rev-parse --short HEAD` |
 | Dependencies reachable | not applicable                           | No backend, database or third-party service                                           |
 | Dev entry / login      | not applicable                           | No users or sign-in                                                                   |
