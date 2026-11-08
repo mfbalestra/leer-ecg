@@ -172,7 +172,7 @@ function Encabezado({
         aria-label={`Racha de ${numero(racha)}`}
       >
         <Flame className="size-4" aria-hidden="true" />
-        <span className="tabular-nums">{numero(racha)}</span> seguidos
+        <span className="tabular-nums">{numero(racha)}</span> {racha === 1 ? 'seguido' : 'seguidos'}
       </p>
     </header>
   )
