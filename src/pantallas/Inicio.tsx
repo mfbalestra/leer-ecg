@@ -11,7 +11,7 @@ import { numero, segundos } from '@/motor/formato'
 import { LATIDO_NORMAL, generarTira } from '@/motor/latido'
 import { siguienteNivel, type Progreso } from '@/motor/progreso'
 import { NIVELES, type NivelId } from '@/motor/retos'
-import { FOCO_PROGRAMATICO } from '@/pantallas/Nivel'
+import { FOCO_PROGRAMATICO } from '@/lib/foco'
 
 type Props = {
   progreso: Progreso

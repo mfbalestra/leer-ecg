@@ -24,8 +24,6 @@ import {
 } from '@/motor/retos'
 import { avance, avanzar, crearSesion, responder, terminada, type Sesion } from '@/motor/sesion'
 
-export { FOCO_PROGRAMATICO } from '@/lib/foco'
-
 export type CierreNivel = {
   nivel: NivelId
   aciertos: number
