@@ -1,0 +1,21 @@
+{
+  "extends": "./kit/tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "module": "nodenext",
+    "allowImportingTsExtensions": true,
+    "moduleDetection": "force",
+    "noEmit": true
+  },
+  "include": [
+    "vite.config.ts",
+    "vitest.config.mts",
+    "playwright.config.ts",
+    "e2e/**/*.ts",
+    "kit/**/*.ts",
+    "kit/**/*.mts"
+  ]
+}

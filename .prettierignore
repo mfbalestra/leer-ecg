@@ -1,0 +1,12 @@
+dist
+coverage
+node_modules
+package-lock.json
+*.generado.*
+test-results
+playwright-report
+
+# Generados o leídos byte a byte por sus propios scripts
+src/design-tokens.css
+design/tokens.json
+consola/package-lock.json

@@ -1,0 +1,17 @@
+{
+  "primario": "#0f766e",
+  "neutros": "calido",
+  "fondo": "tenido",
+  "fuente": "'Geist Variable', system-ui, sans-serif",
+  "fuente_mono": "Consolas, 'Liberation Mono', monospace",
+  "radio": 12,
+  "densidad": "comoda",
+  "separacion": "borde",
+  "contraste_borde": "definido",
+  "aire": 1.1,
+  "curva": "suave",
+  "rebote": 8,
+  "exito": "#166534",
+  "peligro": "#b91c1c",
+  "alerta": "#9a3412"
+}

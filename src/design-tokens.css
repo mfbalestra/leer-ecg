@@ -1,0 +1,87 @@
+/* Generado por implementar-interfaz/scripts/generate-css.mjs a partir de tokens.json.
+   No editar a mano: se pierde en la próxima generación. */
+
+:root, [data-theme="light"] {
+  --fondo: #eceae5;
+  --superficie: #f7f6f4;
+  --texto: #15120e;
+  --texto-tenue: #3e372b;
+  --borde: #8a7a5f;
+  --primario: #0f766e;
+  --primario-hover: #0d645e;
+  --primario-suave: #dbeae9;
+  --exito: #166534;
+  --exito-suave: #e8f0eb;
+  --alerta: #9a3412;
+  --alerta-suave: #f5ebe7;
+  --peligro: #b91c1c;
+  --peligro-suave: #f8e8e8;
+  --foco: #0f766e;
+  --sobre-primario: #ffffff;
+  --sobre-exito: #ffffff;
+  --sobre-peligro: #ffffff;
+  --papel: #fff8f6;
+  --papel-linea-fina: #f2c4c0;
+  --papel-linea-gruesa: #cc6a62;
+  --trazo: #1c1917;
+  --trazo-resalte: #0f766e;
+  --racha: #9a3412;
+  --elevacion: none;
+}
+
+:root {
+  --espacio: 1.1rem;
+  --radio: 12px;
+  --alto-control: 44px;
+  --borde-plano: 1px;
+  --curva: cubic-bezier(0.4, 0, 0.2, 1);
+  --curva-momento: linear(0, 0.102, 0.322, 0.563, 0.773, 0.926, 1.021, 1.068, 1.08, 1.072, 1.054, 1.035, 1.018, 1.006, 0.998, 0.995, 0.994, 0.994, 0.996, 0.997, 0.999, 1, 1, 1, 1);
+  --duracion-breve: 150ms;
+  --duracion-media: 250ms;
+  --duracion-larga: 400ms;
+  --font-sans: 'Geist Variable', system-ui, sans-serif;
+  --font-mono: Consolas, 'Liberation Mono', monospace;
+}
+
+.display {
+  font-size: 2rem;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-family: var(--font-sans);
+}
+
+.titulo {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  font-weight: 650;
+  font-family: var(--font-sans);
+}
+
+.enunciado {
+  font-size: 1.25rem;
+  line-height: 1.35;
+  font-weight: 400;
+  font-family: var(--font-sans);
+}
+
+.cuerpo {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  font-weight: 400;
+  font-family: var(--font-sans);
+}
+
+.pequeno {
+  font-size: 0.875rem;
+  line-height: 1.45;
+  font-weight: 400;
+  font-family: var(--font-sans);
+}
+
+.cifra {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  font-weight: 650;
+  font-family: var(--font-sans);
+}
