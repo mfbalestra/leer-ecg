@@ -3,8 +3,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { avanzar, responder, type Sesion } from '../src/motor/sesion.ts'
 import { abrirNivel, contestarBien, contestarMal, todosLosChequeos } from './ayudas.ts'
 
-// Tira apaisada. Con `?semilla=41` el nivel 3 trae: texto, tira con opciones, tira con contador,
-// tira con contador y texto (con un error en el segundo, el cuarto pasa a ser texto).
+// Tira apaisada. Con `?semilla=11` el nivel 3 trae: texto, tira con opciones, tira con contador y,
+// tras un error en el segundo, un cuarto sin tira. Si el motor cambia el orden de los retos, se
+// busca otra semilla que cumpla eso (una secuencia fija es lo que estos tests necesitan).
+const SEMILLA_NIVEL_3 = 11
 
 /**
  * Cada control a la vista mide al menos 44 × 44 px. Se afirma acá porque la medida del kit usa 24 px
@@ -40,7 +42,7 @@ async function tiraEntera(page: Page, modo: Locator) {
 
 /** Contesta bien el primer reto (sin tira) del nivel 3 y pasa al segundo, que tiene tira. */
 async function hastaLaPrimeraTira(page: Page): Promise<Sesion> {
-  let sesion = await abrirNivel(page, 'frecuencia')
+  let sesion = await abrirNivel(page, 'frecuencia', SEMILLA_NIVEL_3)
   expect(sesion.actual.vista.tipo).toBe('texto')
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await contestarBien(page, sesion.actual)
@@ -58,7 +60,7 @@ test.describe('tira apaisada con el teléfono girado (844 × 390, táctil)', () 
     page,
   }) => {
     // El piso de 44 px en la pantalla de siempre: «Niveles», las opciones.
-    await abrirNivel(page, 'frecuencia')
+    await abrirNivel(page, 'frecuencia', SEMILLA_NIVEL_3)
     await controlesDe44(page.locator('main'), 'pantalla-apaisada')
     let sesion = await hastaLaPrimeraTira(page)
 
@@ -166,7 +168,7 @@ test.describe('tira apaisada girada en el celular en vertical (390 × 844, táct
     page,
   }) => {
     const boton = page.getByRole('button', { name: 'Ver la tira apaisada' })
-    await abrirNivel(page, 'frecuencia')
+    await abrirNivel(page, 'frecuencia', SEMILLA_NIVEL_3)
     // Sin tira, sin botón.
     await expect(boton).toHaveCount(0)
     let sesion = await hastaLaPrimeraTira(page)

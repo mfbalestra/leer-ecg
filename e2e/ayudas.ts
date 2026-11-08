@@ -75,10 +75,10 @@ export async function contestarMal(raiz: Page | Locator, reto: Reto) {
     .click()
 }
 
-export async function abrirNivel(page: Page, nivel: NivelId): Promise<Sesion> {
-  await page.goto(`/?semilla=${SEMILLA}`)
+export async function abrirNivel(page: Page, nivel: NivelId, semilla = SEMILLA): Promise<Sesion> {
+  await page.goto(`/?semilla=${semilla}`)
   const datos = nivelPorId(nivel)
   await page.getByRole('button', { name: new RegExp(`nivel ${datos.numero}:`) }).click()
   await expect(page.getByRole('heading', { level: 1 })).toContainText(datos.titulo)
-  return crearSesion(nivel, SEMILLA)
+  return crearSesion(nivel, semilla)
 }
