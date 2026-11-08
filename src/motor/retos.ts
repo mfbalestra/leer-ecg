@@ -45,7 +45,7 @@ export const NIVELES: readonly Nivel[] = [
     numero: 1,
     titulo: 'El papel',
     descripcion: 'Qué vale cada cuadradito: tiempo y voltaje.',
-    meta: 8,
+    meta: 7,
   },
   {
     id: 'latido',

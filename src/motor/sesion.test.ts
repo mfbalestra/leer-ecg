@@ -1,7 +1,7 @@
 import * as fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 
-import { nivelPorId, type NivelId, type Reto } from './retos.ts'
+import { TIPOS_POR_NIVEL, nivelPorId, type NivelId, type Reto } from './retos.ts'
 import { avance, avanzar, crearSesion, responder, terminada, type Sesion } from './sesion.ts'
 
 const semillas = fc.integer({ min: 0, max: 2 ** 31 - 1 })
@@ -32,6 +32,33 @@ function jugarAcertando(sesion: Sesion): { final: Sesion; tipos: string[] } {
 }
 
 const sinRepetirSeguido = (tipos: string[]) => tipos.every((t, i) => i === 0 || t !== tipos[i - 1])
+
+/**
+ * Lo que la persona ve de un reto: enunciado, dibujo y respuesta. El orden de las opciones y los
+ * identificadores internos no cuentan; dos retos con la misma huella son la misma pregunta.
+ */
+function huella(reto: Reto): string {
+  const vista = reto.vista
+  let dibujo: unknown = vista
+  if (vista.tipo === 'latido') dibujo = { ...vista, tira: vista.tira.muestras }
+  if (vista.tipo === 'tira') dibujo = vista.tira.muestras
+  return JSON.stringify([reto.tipo, reto.enunciado, reto.respuesta.correcta, reto.marcas, dibujo])
+}
+
+/** Juega acertando siempre y devuelve los retos en el orden en que aparecieron. */
+function retosAcertando(sesion: Sesion): Reto[] {
+  let s = sesion
+  const retos: Reto[] = []
+  while (!terminada(s)) {
+    retos.push(s.actual)
+    s = responder(s, respuestaCorrecta(s.actual)).sesion
+    if (!terminada(s)) s = avanzar(s)
+    if (retos.length > 100) throw new Error('La sesión no termina')
+  }
+  return retos
+}
+
+const nivelesBase: NivelId[] = ['papel', 'latido', 'frecuencia', 'ritmo']
 
 describe('sesion', () => {
   it('acertando siempre, termina en exactamente la meta de aciertos sin repetir el mismo tipo seguido', () => {
@@ -69,6 +96,47 @@ describe('sesion', () => {
             s = avanzar(responder(s, respuestaCorrecta(s.actual)).sesion)
           }
           return s.actual.tipo === tipoErrado && s.actual.id !== inicial.actual.id
+        },
+      ),
+    )
+  })
+
+  it('acertando siempre, ninguna pregunta idéntica se repite en la partida', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...nivelesBase), semillas, (nivel, semilla) => {
+        const huellas = retosAcertando(crearSesion(nivel, semilla)).map(huella)
+        return new Set(huellas).size === huellas.length
+      }),
+    )
+  })
+
+  it('acertando siempre, salen todos los tipos del nivel antes de repetir uno', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...nivelesBase), semillas, (nivel, semilla) => {
+        const tipos = retosAcertando(crearSesion(nivel, semilla)).map((r) => r.tipo)
+        const porVuelta = TIPOS_POR_NIVEL[nivel].length
+        for (let desde = 0; desde < tipos.length; desde += porVuelta) {
+          const vuelta = tipos.slice(desde, desde + porVuelta)
+          if (new Set(vuelta).size !== vuelta.length) return false
+        }
+        return true
+      }),
+    )
+  })
+
+  it('el reto errado vuelve en otra versión de la misma pregunta', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom<NivelId>('latido', 'frecuencia', 'ritmo'),
+        semillas,
+        (nivel, semilla) => {
+          const inicial = crearSesion(nivel, semilla)
+          let s = avanzar(responder(inicial, respuestaIncorrecta(inicial.actual)).sesion)
+          for (let i = 0; i < 2; i += 1)
+            s = avanzar(responder(s, respuestaCorrecta(s.actual)).sesion)
+          return (
+            s.actual.tipo === inicial.actual.tipo && huella(s.actual) !== huella(inicial.actual)
+          )
         },
       ),
     )
