@@ -8,6 +8,7 @@
 // Estados: zonas en reposo, con foco, elegida correcta, elegida incorrecta y deshabilitadas.
 
 import { CircleCheck, CircleX } from 'lucide-react'
+import { useId } from 'react'
 
 import { cn } from '@/lib/utils'
 import type { Tira } from '@/motor/latido'
@@ -65,7 +66,9 @@ export function TiraEcg({
   })
   const trazo = `M${puntos.join(' L')}`
   const porcentaje = (ms: number) => `${((ms / tira.duracionMs) * 100).toFixed(3)}%`
-  const idPatron = `papel-${tira.id}`
+  // Único por instancia: la misma tira puede dibujarse dos veces a la vez (la pantalla y, encima, la
+  // tira apaisada), y un id repetido haría que una tome el patrón de la otra.
+  const idPatron = `papel-${useId().replace(/[^\w-]/g, '')}`
 
   return (
     <div

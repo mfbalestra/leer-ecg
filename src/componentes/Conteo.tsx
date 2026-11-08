@@ -2,6 +2,7 @@
 // celular; el valor se lee como una cifra grande.
 //
 // Uso: <Conteo minimo={0} maximo={20} unidad="QRS" onResponder={(n) => responder(n)} />
+//      <Conteo … tactil />  en la tira apaisada: los tres botones miden 44 px a cualquier ancho.
 // Estados: en curso, respondido (deshabilitado, muestra el valor dado).
 
 import { Minus, Plus } from 'lucide-react'
@@ -15,10 +16,20 @@ type Props = {
   maximo: number
   unidad: string
   deshabilitado?: boolean
+  /** Fija los botones en 44 px aunque el ancho y el puntero permitieran el tamaño de escritorio. */
+  tactil?: boolean
   onResponder: (valor: number) => void
 }
 
-export function Conteo({ minimo, maximo, unidad, deshabilitado = false, onResponder }: Props) {
+export function Conteo({
+  minimo,
+  maximo,
+  unidad,
+  deshabilitado = false,
+  tactil = false,
+  onResponder,
+}: Props) {
+  const piso = tactil ? 'min-h-11 min-w-11' : undefined
   const [valor, setValor] = useState(minimo)
   const cambiar = (delta: number) => {
     setValor((v) => Math.min(maximo, Math.max(minimo, v + delta)))
@@ -34,6 +45,7 @@ export function Conteo({ minimo, maximo, unidad, deshabilitado = false, onRespon
           type="button"
           variant="outline"
           size="icon-lg"
+          className={piso}
           aria-label="Uno menos"
           disabled={deshabilitado || valor <= minimo}
           onClick={() => cambiar(-1)}
@@ -51,6 +63,7 @@ export function Conteo({ minimo, maximo, unidad, deshabilitado = false, onRespon
           type="button"
           variant="outline"
           size="icon-lg"
+          className={piso}
           aria-label="Uno más"
           disabled={deshabilitado || valor >= maximo}
           onClick={() => cambiar(1)}
@@ -59,7 +72,13 @@ export function Conteo({ minimo, maximo, unidad, deshabilitado = false, onRespon
         </Button>
         <span className="cuerpo text-texto-tenue">{unidad}</span>
       </div>
-      <Button type="button" size="lg" disabled={deshabilitado} onClick={() => onResponder(valor)}>
+      <Button
+        type="button"
+        size="lg"
+        className={piso}
+        disabled={deshabilitado}
+        onClick={() => onResponder(valor)}
+      >
         Responder
       </Button>
     </div>
