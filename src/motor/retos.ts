@@ -168,6 +168,22 @@ export type Marca =
   | { tipo: 'sombreado'; desdeMs: number; hastaMs: number; etiqueta: string }
   | { tipo: 'linea'; enMs: number; etiqueta: string }
   | { tipo: 'ventana'; desdeMs: number; hastaMs: number; etiqueta: string }
+  /**
+   * Un tramo contado o medido de la evidencia: un cuadrado grande, una distancia R–R, el lugar de
+   * la P. `alterno` lo distingue del tramo vecino; `abajo` lleva el rótulo al pie del papel; con
+   * `omitible`, el rótulo se omite donde no entra (el sombreado sigue mostrando el tramo).
+   */
+  | {
+      tipo: 'tramo'
+      desdeMs: number
+      hastaMs: number
+      etiqueta: string
+      alterno: boolean
+      abajo: boolean
+      omitible: boolean
+    }
+  /** Un rótulo de la evidencia sobre un instante del trazo, al pie del papel: cada QRS contado. */
+  | { tipo: 'rotulo'; enMs: number; etiqueta: string }
 
 export type Zona = { id: string; etiqueta: string; desdeMs: number; hastaMs: number }
 
@@ -190,7 +206,13 @@ export type Reto = {
   tipo: TipoReto
   enunciado: string
   vista: Vista
+  /** Lo que el reto muestra mientras se pregunta. */
   marcas: Marca[]
+  /**
+   * La prueba de la respuesta, que se dibuja sobre la tira sólo después de responder (antes la
+   * revelaría). Sale de los mismos latidos que dibujan la tira; vacía en los retos sin tira.
+   */
+  evidencia: Marca[]
   respuesta: Respuesta
   /** Lo que se dice al acertar: la regla en una línea. */
   acierto: string
@@ -271,6 +293,81 @@ function tiraDe(
 }
 
 // ---------------------------------------------------------------------------------------------
+// Evidencia: lo que se dibuja sobre la tira al responder. Sale de los latidos de la tira, nunca de
+// lo dibujado, y cuenta lo mismo que la respuesta (las pruebas de propiedades lo exigen).
+
+/** Las dos R marcadas de la regla del 300: las dos primeras R visibles. */
+function rMarcadas(tira: Tira): { marcas: Marca[]; evidencia: Marca[] } {
+  const [primero, segundo] = latidosVisibles(tira)
+  if (!primero || !segundo) throw new Error('La regla del 300 necesita dos R visibles')
+  return {
+    marcas: [
+      { tipo: 'linea', enMs: primero.rMs, etiqueta: 'R' },
+      { tipo: 'linea', enMs: segundo.rMs, etiqueta: 'R' },
+    ],
+    evidencia: evidenciaCuadrados(primero.rMs, segundo.rMs),
+  }
+}
+
+/** Cada cuadrado grande entre dos R, numerado desde la primera R. */
+export function evidenciaCuadrados(desdeRMs: number, hastaRMs: number): Marca[] {
+  const cuadrados = Math.round((hastaRMs - desdeRMs) / MS_POR_CUADRADO_GRANDE)
+  return Array.from({ length: cuadrados }, (_, i) => ({
+    tipo: 'tramo' as const,
+    desdeMs: desdeRMs + i * MS_POR_CUADRADO_GRANDE,
+    hastaMs: desdeRMs + (i + 1) * MS_POR_CUADRADO_GRANDE,
+    etiqueta: numero(i + 1),
+    alterno: i % 2 === 1,
+    abajo: true,
+    omitible: false,
+  }))
+}
+
+/** Cada QRS cuya R cae en la ventana, numerado en orden: el último número es el conteo. */
+export function evidenciaQrs(tira: Tira, desdeMs: number, hastaMs: number): Marca[] {
+  return tira.latidos
+    .filter((l) => l.rMs >= desdeMs && l.rMs <= hastaMs)
+    .map((l, i) => ({ tipo: 'rotulo' as const, enMs: l.rMs, etiqueta: numero(i + 1) }))
+}
+
+/** Cada R visible marcada y cada distancia R–R sombreada, con su duración donde entra. */
+export function evidenciaRr(tira: Tira): Marca[] {
+  const visibles = latidosVisibles(tira)
+  const erres: Marca[] = visibles.map((l) => ({ tipo: 'linea', enMs: l.rMs, etiqueta: 'R' }))
+  const distancias: Marca[] = visibles.slice(1).map((l, i) => {
+    const desdeMs = visibles[i]?.rMs ?? 0
+    return {
+      tipo: 'tramo',
+      desdeMs,
+      hastaMs: l.rMs,
+      etiqueta: segundos((l.rMs - desdeMs) / 1000),
+      alterno: i % 2 === 1,
+      abajo: true,
+      omitible: true,
+    }
+  })
+  return [...distancias, ...erres]
+}
+
+/**
+ * Antes de cada QRS visible, su onda P rotulada «P»; en un ritmo sin P, el lugar donde iría,
+ * rotulado «sin P». Se recorta al papel: la P de la primera R puede empezar antes de la tira.
+ */
+export function evidenciaP(tira: Tira): Marca[] {
+  return latidosVisibles(tira)
+    .filter((l) => l.pFinMs > 0)
+    .map((l) => ({
+      tipo: 'tramo' as const,
+      desdeMs: Math.max(0, l.pInicioMs),
+      hastaMs: Math.min(tira.duracionMs, l.pFinMs),
+      etiqueta: l.parametros.pPresente ? 'P' : 'sin P',
+      alterno: false,
+      abajo: false,
+      omitible: false,
+    }))
+}
+
+// ---------------------------------------------------------------------------------------------
 // Nivel 1: el papel
 
 const TIEMPOS: readonly Opcion[] = [
@@ -281,7 +378,7 @@ const TIEMPOS: readonly Opcion[] = [
 ]
 
 function retoPapel(id: string, tipo: TipoPapel, azar: Azar): Reto {
-  const base = { id, nivel: 'papel' as const, tipo, marcas: [] as Marca[] }
+  const base = { id, nivel: 'papel' as const, tipo, marcas: [] as Marca[], evidencia: [] }
   switch (tipo) {
     case 'papel-chico-tiempo':
       return conOpciones(
@@ -438,7 +535,7 @@ function zonasDe(latido: LatidoEnTira, nombres: readonly NombreRegion[]): Zona[]
 
 function retoLatido(id: string, tipo: TipoLatido, azar: Azar): Reto {
   const vista = latidoSolo(azar, LATIDO_NORMAL)
-  const base = { id, nivel: 'latido' as const, tipo, vista }
+  const base = { id, nivel: 'latido' as const, tipo, vista, evidencia: [] }
   switch (tipo) {
     case 'latido-tocar': {
       const pedida = azar.elegir(REGIONES_TOCABLES)
@@ -511,17 +608,12 @@ function tiraReglaDel300(azar: Azar): {
   cuadrados: number
   lpm: number
   marcas: Marca[]
+  evidencia: Marca[]
 } {
   const cuadrados = azar.entero(2, 6)
   const lpm = frecuenciaPorCuadradosGrandes(cuadrados)
   const tira = tiraDe(azar, 4000, 'regular', { frecuencia: lpm })
-  const [primero, segundo] = latidosVisibles(tira)
-  if (!primero || !segundo) throw new Error('La tira de la regla del 300 necesita dos R visibles')
-  const marcas: Marca[] = [
-    { tipo: 'linea', enMs: primero.rMs, etiqueta: 'R' },
-    { tipo: 'linea', enMs: segundo.rMs, etiqueta: 'R' },
-  ]
-  return { tira, cuadrados, lpm, marcas }
+  return { tira, cuadrados, lpm, ...rMarcadas(tira) }
 }
 
 /** Contar los QRS en los 6 segundos de una tira: la frecuencia aproximada es el conteo × 10. */
@@ -537,6 +629,7 @@ function retoContarQrs(
     enunciado,
     vista: { tipo: 'tira', tira },
     marcas: [{ tipo: 'ventana', desdeMs: 0, hastaMs: 6000, etiqueta: '6 segundos' }],
+    evidencia: evidenciaQrs(tira, 0, 6000),
     respuesta: { modo: 'conteo', correcta: contados, minimo: 0, maximo: 20, unidad: 'QRS' },
     acierto: `${contados} QRS en 6 segundos × 10 = ${latidosPorMinuto(lpm)}, aproximadamente.`,
     error: `Son ${contados} QRS: contá los picos altos dentro de la ventana. ${contados} × 10 = ${latidosPorMinuto(lpm)}.`,
@@ -552,12 +645,13 @@ function retoFrecuencia(
   const base = { id, nivel, tipo }
   switch (tipo) {
     case 'frecuencia-contar-grandes': {
-      const { tira, cuadrados, lpm, marcas } = tiraReglaDel300(azar)
+      const { tira, cuadrados, lpm, marcas, evidencia } = tiraReglaDel300(azar)
       return {
         ...base,
         enunciado: '¿Cuántos cuadrados grandes hay entre las dos R marcadas?',
         vista: { tipo: 'tira', tira },
         marcas,
+        evidencia,
         respuesta: {
           modo: 'conteo',
           correcta: cuadrados,
@@ -570,13 +664,14 @@ function retoFrecuencia(
       }
     }
     case 'frecuencia-regla-300': {
-      const { tira, cuadrados, lpm, marcas } = tiraReglaDel300(azar)
+      const { tira, cuadrados, lpm, marcas, evidencia } = tiraReglaDel300(azar)
       return conOpciones(
         {
           ...base,
           enunciado: `Entre las dos R hay ${cuadrados} cuadrados grandes. ¿Qué frecuencia es?`,
           vista: { tipo: 'tira', tira },
           marcas,
+          evidencia,
           acierto: `${CUADRADOS_GRANDES_POR_MINUTO} ÷ ${cuadrados} = ${latidosPorMinuto(lpm)}. La secuencia: ${SECUENCIA_300.join(', ')}.`,
           error: `${CUADRADOS_GRANDES_POR_MINUTO} ÷ ${cuadrados} = ${latidosPorMinuto(lpm)}. Memorizá la secuencia ${SECUENCIA_300.join(', ')}: un número por cuadrado grande.`,
         },
@@ -599,6 +694,7 @@ function retoFrecuencia(
           enunciado: `Contaste ${contados} QRS en 6 segundos. ¿Frecuencia aproximada?`,
           vista: { tipo: 'texto' },
           marcas: [],
+          evidencia: [],
           acierto: `${contados} × 10 = ${latidosPorMinuto(lpm)}: seis segundos entran diez veces en un minuto.`,
           error: `${contados} × 10 = ${latidosPorMinuto(lpm)}: seis segundos entran diez veces en un minuto, así que se multiplica por 10.`,
         },
@@ -621,6 +717,7 @@ function retoFrecuencia(
           enunciado: `Frecuencia de ${latidosPorMinuto(lpm)}. ¿Cómo se llama?`,
           vista: { tipo: 'texto' },
           marcas: [],
+          evidencia: [],
           acierto: `${latidosPorMinuto(lpm)} es ${juicio}: normal entre ${NORMAL.frecuencia.minLpm} y ${NORMAL.frecuencia.maxLpm} lpm.`,
           error: `${latidosPorMinuto(lpm)} es ${juicio}: menos de ${NORMAL.frecuencia.minLpm} es bradicardia, más de ${NORMAL.frecuencia.maxLpm} es taquicardia.`,
         },
@@ -683,6 +780,7 @@ function retoRitmoTira(
         ...base,
         enunciado: '¿El ritmo es regular o irregular?',
         vista: { tipo: 'tira', tira },
+        evidencia: evidenciaRr(tira),
         acierto: esRegular
           ? 'Regular: la distancia entre una R y la siguiente se repite igual.'
           : 'Irregular: la distancia entre las R cambia de un latido a otro.',
@@ -712,6 +810,7 @@ function retoRitmoTira(
       ...base,
       enunciado: '¿Hay una onda P antes de cada QRS?',
       vista: { tipo: 'tira', tira },
+      evidencia: evidenciaP(tira),
       acierto: hayP
         ? 'Sí: antes de cada QRS hay una P chiquita y redondeada.'
         : 'No: la línea de base ondula y no hay una P clara antes de los QRS.',
@@ -728,7 +827,7 @@ function retoRitmoTira(
   )
 }
 
-type BaseIntervalo = { id: string; nivel: NivelId; tipo: TipoRitmoIntervalo }
+type BaseIntervalo = { id: string; nivel: NivelId; tipo: TipoRitmoIntervalo; evidencia: Marca[] }
 
 /** ¿El PR es normal o largo? Con la medida en el enunciado, o contando los cuadrados sobre el latido. */
 function retoJuzgarPr(
@@ -823,7 +922,7 @@ function retoRitmoIntervalo(
   nivel: NivelId,
   dados: OpcionesIntervalo = {},
 ): Reto {
-  const base = { id, nivel, tipo }
+  const base = { id, nivel, tipo, evidencia: [] }
   const { prMs: prDado, qrsMs: qrsDado, valorEnEnunciado = true } = dados
   switch (tipo) {
     case 'ritmo-medir-pr': {
@@ -916,8 +1015,6 @@ export function generarLectura(azar: Azar, numero: number): Reto[] {
     qrsMs,
     qtMs: qtPara(qrsMs),
   })
-  const [primero, segundo] = latidosVisibles(tira)
-  if (!primero || !segundo) throw new Error('La lectura necesita dos R visibles')
   const prefijo = `lectura-${numero}`
   const retos: Reto[] = [retoRitmoTira(`${prefijo}-ritmo`, 'ritmo-regular', azar, 'lectura', tira)]
   if (ritmo === 'regular') {
@@ -930,10 +1027,7 @@ export function generarLectura(azar: Azar, numero: number): Reto[] {
           enunciado:
             'Es regular: contá los cuadrados grandes entre las dos R marcadas. ¿Qué frecuencia es?',
           vista: { tipo: 'tira', tira },
-          marcas: [
-            { tipo: 'linea', enMs: primero.rMs, etiqueta: 'R' },
-            { tipo: 'linea', enMs: segundo.rMs, etiqueta: 'R' },
-          ],
+          ...rMarcadas(tira),
           acierto: `${cuadrados} cuadrados grandes: ${CUADRADOS_GRANDES_POR_MINUTO} ÷ ${cuadrados} = ${latidosPorMinuto(lpm)}, ${juzgarFrecuencia(lpm)}.`,
           error: `Hay ${cuadrados} cuadrados grandes: ${CUADRADOS_GRANDES_POR_MINUTO} ÷ ${cuadrados} = ${latidosPorMinuto(lpm)}. Secuencia: ${SECUENCIA_300.join(', ')}.`,
         },

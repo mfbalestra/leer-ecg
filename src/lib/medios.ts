@@ -11,6 +11,9 @@ export const TELEFONO_APAISADO =
 
 export const VERTICAL = '(orientation: portrait)'
 
+/** Desde 768 px de ancho (`md` de Tailwind): la tira sale de la columna de lectura. */
+export const ANCHO_ESCRITORIO = '(min-width: 48rem)'
+
 export function useCoincide(consulta: string): boolean {
   const suscribir = useCallback(
     (aviso: () => void) => {

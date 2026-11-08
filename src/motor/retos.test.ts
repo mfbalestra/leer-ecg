@@ -2,7 +2,8 @@ import * as fc from 'fast-check'
 import { describe, it } from 'vitest'
 
 import { crearAzar } from './azar.ts'
-import { contarQrs, ritmoTieneP } from './latido.ts'
+import { numero, segundos } from './formato.ts'
+import { contarQrs, latidosVisibles, ritmoTieneP, type Tira } from './latido.ts'
 import { MS_POR_CUADRADO_GRANDE, SECUENCIA_300, cuadradosChicos } from './papel.ts'
 import {
   NIVELES,
@@ -10,6 +11,7 @@ import {
   esCorrecta,
   generarLectura,
   generarReto,
+  type Marca,
   type NivelId,
   type Reto,
   type TipoReto,
@@ -173,6 +175,182 @@ describe('generarReto', () => {
           if (!a || !b || a.hastaMs > b.desdeMs) return false
         }
         return zonas.every((z) => z.hastaMs > z.desdeMs)
+      }),
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Evidencia: lo que se dibuja al responder cuenta lo mismo que la respuesta y sale de los latidos
+// que dibujan la tira.
+
+type Tramo = Extract<Marca, { tipo: 'tramo' }>
+const tramos = (marcas: readonly Marca[]) => marcas.filter((m): m is Tramo => m.tipo === 'tramo')
+const cerca = (a: number, b: number) => Math.abs(a - b) < 1e-6
+
+/** Los cuadrados numerados empiezan en la primera R, miden un cuadrado grande cada uno, van
+ * pegados y terminan en la segunda R; su cantidad es la que se pregunta. */
+function cuadradosCoherentes(reto: Reto, cuadrados: number): boolean {
+  const lineas = reto.marcas.filter((m) => m.tipo === 'linea')
+  const [a, b] = lineas
+  const numerados = tramos(reto.evidencia)
+  if (!a || !b || a.tipo !== 'linea' || b.tipo !== 'linea') return false
+  return (
+    numerados.length === cuadrados &&
+    numerados.length === reto.evidencia.length &&
+    numerados.every(
+      (t, i) =>
+        t.etiqueta === numero(i + 1) &&
+        cerca(t.hastaMs - t.desdeMs, MS_POR_CUADRADO_GRANDE) &&
+        cerca(t.desdeMs, i === 0 ? a.enMs : (numerados[i - 1]?.hastaMs ?? Number.NaN)),
+    ) &&
+    cerca(numerados.at(-1)?.hastaMs ?? Number.NaN, b.enMs)
+  )
+}
+
+/** Cada QRS de la ventana numerado sobre su R, en orden; el último número es el conteo. */
+function qrsCoherentes(reto: Reto, tira: Tira): boolean {
+  if (reto.respuesta.modo !== 'conteo') return false
+  const correcta = reto.respuesta.correcta
+  const rotulos = reto.evidencia.filter((m) => m.tipo === 'rotulo')
+  const erres = tira.latidos.filter((l) => l.rMs >= 0 && l.rMs <= 6000).map((l) => l.rMs)
+  return (
+    rotulos.length === reto.evidencia.length &&
+    rotulos.length === correcta &&
+    (correcta === 0 || rotulos.at(-1)?.etiqueta === numero(correcta)) &&
+    rotulos.every((m, i) => m.etiqueta === numero(i + 1) && cerca(m.enMs, erres[i] ?? Number.NaN))
+  )
+}
+
+/** Cada R visible marcada y cada distancia R–R sombreada, pegadas; iguales sólo si es regular. */
+function rrCoherentes(reto: Reto, tira: Tira): boolean {
+  const visibles = latidosVisibles(tira)
+  const erres = reto.evidencia.filter((m) => m.tipo === 'linea')
+  const distancias = tramos(reto.evidencia)
+  const anchos = distancias.map((t) => t.hastaMs - t.desdeMs)
+  const iguales = anchos.every((w) => cerca(w, anchos[0] ?? Number.NaN))
+  return (
+    erres.length === visibles.length &&
+    erres.every((m, i) => m.tipo === 'linea' && cerca(m.enMs, visibles[i]?.rMs ?? Number.NaN)) &&
+    distancias.length === visibles.length - 1 &&
+    distancias.every(
+      (t, i) =>
+        cerca(t.desdeMs, visibles[i]?.rMs ?? Number.NaN) &&
+        cerca(t.hastaMs, visibles[i + 1]?.rMs ?? Number.NaN) &&
+        t.etiqueta === segundos((t.hastaMs - t.desdeMs) / 1000) &&
+        t.omitible,
+    ) &&
+    iguales === (tira.ritmo === 'regular')
+  )
+}
+
+/** Una marca de P por latido visible cuya P entra en el papel, antes de su QRS: «P» si el ritmo
+ * tiene P, «sin P» si no. */
+function pCoherentes(reto: Reto, tira: Tira): boolean {
+  const conP = latidosVisibles(tira).filter((l) => l.pFinMs > 0)
+  const marcas = tramos(reto.evidencia)
+  const etiqueta = ritmoTieneP(tira.ritmo) ? 'P' : 'sin P'
+  return (
+    marcas.length === reto.evidencia.length &&
+    marcas.length === conP.length &&
+    marcas.every((t, i) => {
+      const latido = conP[i]
+      return (
+        latido !== undefined &&
+        t.etiqueta === etiqueta &&
+        cerca(t.desdeMs, Math.max(0, latido.pInicioMs)) &&
+        cerca(t.hastaMs, latido.pFinMs) &&
+        t.hastaMs <= latido.qrsInicioMs
+      )
+    })
+  )
+}
+
+/** La evidencia de un reto con tira, según lo que pregunta; los retos sin tira no tienen. */
+function evidenciaCoherente(reto: Reto): boolean {
+  if (reto.vista.tipo !== 'tira') return reto.evidencia.length === 0
+  const tira = reto.vista.tira
+  const r = reto.respuesta
+  // Un tipo con tira que no está acá no tiene regla de evidencia: falla, para que se la agregue.
+  const reglas: Partial<Record<TipoReto, () => boolean>> = {
+    'frecuencia-contar-grandes': () => r.modo === 'conteo' && cuadradosCoherentes(reto, r.correcta),
+    'frecuencia-regla-300': () =>
+      r.modo === 'opciones' && cuadradosCoherentes(reto, 300 / Number(r.correcta)),
+    'frecuencia-contar-qrs': () => qrsCoherentes(reto, tira),
+    'ritmo-regular': () => rrCoherentes(reto, tira),
+    'ritmo-p': () => pCoherentes(reto, tira),
+  }
+  return reglas[reto.tipo]?.() ?? false
+}
+
+/** Mientras se pregunta, el reto muestra sólo sus marcas de siempre: nada de la evidencia. */
+const sinEvidenciaAntes = (reto: Reto) =>
+  reto.marcas.every((m) => m.tipo !== 'tramo' && m.tipo !== 'rotulo')
+
+describe('evidencia al responder', () => {
+  it('todo reto de todo nivel: la evidencia cuenta lo mismo que la respuesta', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...nivelesConTipos), semillas, ({ nivel, tipo }, semilla) => {
+        const reto = generarReto(nivel, tipo, crearAzar(semilla), 1)
+        return evidenciaCoherente(reto) && sinEvidenciaAntes(reto)
+      }),
+    )
+  })
+
+  it('los retos con tira siempre traen evidencia', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...nivelesConTipos), semillas, ({ nivel, tipo }, semilla) => {
+        const reto = generarReto(nivel, tipo, crearAzar(semilla), 1)
+        return reto.vista.tipo !== 'tira' || reto.evidencia.length > 0
+      }),
+    )
+  })
+
+  it('cuadrados grandes y regla del 300: tantos cuadrados numerados como la respuesta', () => {
+    fc.assert(
+      fc.property(
+        semillas,
+        fc.constantFrom<TipoReto>('frecuencia-contar-grandes', 'frecuencia-regla-300'),
+        (semilla, tipo) => {
+          const reto = generarReto('frecuencia', tipo, crearAzar(semilla), 1)
+          const r = reto.respuesta
+          const cuadrados = r.modo === 'conteo' ? r.correcta : 300 / Number(r.correcta)
+          return tramos(reto.evidencia).length === cuadrados
+        },
+      ),
+    )
+  })
+
+  it('contar QRS: el último número es el conteo correcto', () => {
+    fc.assert(
+      fc.property(semillas, (semilla) => {
+        const reto = generarReto('frecuencia', 'frecuencia-contar-qrs', crearAzar(semilla), 1)
+        if (reto.respuesta.modo !== 'conteo') return false
+        return reto.evidencia.at(-1)?.etiqueta === numero(reto.respuesta.correcta)
+      }),
+    )
+  })
+
+  it('la P: una marca por latido visible, «P» o «sin P» según el ritmo', () => {
+    fc.assert(
+      fc.property(semillas, (semilla) => {
+        const reto = generarReto('ritmo', 'ritmo-p', crearAzar(semilla), 1)
+        if (reto.vista.tipo !== 'tira') return false
+        const visibles = latidosVisibles(reto.vista.tira).filter((l) => l.pFinMs > 0)
+        const esperada = reto.respuesta.correcta === 'si' ? 'P' : 'sin P'
+        return (
+          reto.evidencia.length === visibles.length &&
+          reto.evidencia.every((m) => m.etiqueta === esperada)
+        )
+      }),
+    )
+  })
+
+  it('la lectura completa usa los mismos generadores: sus retos con tira traen la evidencia', () => {
+    fc.assert(
+      fc.property(semillas, (semilla) => {
+        const retos = generarLectura(crearAzar(semilla), 1)
+        return retos.every((r) => evidenciaCoherente(r) && sinEvidenciaAntes(r))
       }),
     )
   })

@@ -9,7 +9,7 @@
 //     focoFinal={() => boton.current} respuesta={<Opciones … disposicion="fila" />}
 //     resultado={null} siguiente={null} />
 // Estados: pregunta (respuesta abajo), respondida (resultado y «Siguiente» en la misma franja de
-// 72 px, así la tira no salta), derecha o girada.
+// 72 px, así la tira no salta, y la prueba de la respuesta sobre la tira), derecha o girada.
 
 import { X } from 'lucide-react'
 import type { CSSProperties, ReactNode, RefObject } from 'react'
@@ -17,32 +17,39 @@ import type { CSSProperties, ReactNode, RefObject } from 'react'
 import { TiraEcg } from '@/componentes/TiraEcg'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { anchoParaAlto } from '@/lib/tira'
 import { cn } from '@/lib/utils'
 import { FOCO_PROGRAMATICO } from '@/lib/foco'
 import { segundos } from '@/motor/formato'
-import { msAMm } from '@/motor/papel'
 import type { Reto } from '@/motor/retos'
 
-/** Alto del papel de una tira, en milímetros: el mismo que `TiraEcg` usa por omisión. */
-const ALTO_MM = 24
-
-/** La tira lo más grande posible dentro de su zona: limitada por el ancho o por el alto, sin desbordar. */
-function TiraAjustada({ reto, pulso }: { reto: Reto; pulso: boolean }) {
+/**
+ * La tira lo más grande posible dentro de su zona: limitada por el ancho o por el alto, sin
+ * desbordar. Respondido el reto, lleva encima la prueba de la respuesta.
+ */
+function TiraAjustada({
+  reto,
+  pulso,
+  respondido,
+}: {
+  reto: Reto
+  pulso: boolean
+  respondido: boolean
+}) {
   if (reto.vista.tipo !== 'tira') return null
   const tira = reto.vista.tira
-  const proporcion = msAMm(tira.duracionMs) / ALTO_MM
   return (
     <div
       className="flex min-h-0 flex-1 items-center justify-center"
       style={{ containerType: 'size' }}
       data-zona="tira"
     >
-      {/* Los 2 px son el borde del papel, que no escala con la tira. */}
-      <div style={{ width: `min(100cqw, calc((100cqh - 2px) * ${proporcion} + 2px))` }}>
+      <div style={{ width: `min(100cqw, ${anchoParaAlto(tira, '100cqh')})` }}>
         <TiraEcg
           tira={tira}
           etiqueta={`Tira de ${segundos(tira.duracionMs / 1000, 0)} sobre papel milimetrado`}
           marcas={reto.marcas}
+          evidencia={respondido ? reto.evidencia : []}
           pulso={pulso}
         />
       </div>
@@ -143,7 +150,7 @@ export function ModoApaisado({
               </DialogClose>
             </div>
 
-            <TiraAjustada reto={reto} pulso={pulso} />
+            <TiraAjustada reto={reto} pulso={pulso} respondido={respondido} />
 
             {/* La franja de la respuesta reserva 72 px: al responder, el resultado y «Siguiente»
                 ocupan su lugar sin mover la tira. */}

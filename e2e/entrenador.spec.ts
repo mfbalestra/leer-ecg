@@ -484,3 +484,142 @@ test('escritorio: la tira apaisada no aparece y los botones conservan su alto', 
   const niveles = await page.getByRole('button', { name: 'Niveles' }).boundingBox()
   expect(niveles?.height).toBe(28)
 })
+
+// ---------------------------------------------------------------------------------------------
+// Tira ancha en escritorio, prueba de la respuesta y atajos de teclado. Con `?semilla=41` la
+// lectura completa empieza con una tira de 6 s y opciones (¿regular o irregular?).
+
+/** Milímetros de papel de una tira de 6 segundos a 25 mm/s. */
+const MM_TIRA_6S = 150
+
+/** Espera a que terminen las animaciones (el pulso del trazo agranda la tira un 1,5 %). */
+async function sinAnimaciones(page: Page) {
+  await page.evaluate(() =>
+    Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))),
+  )
+}
+
+async function anchoDe(locator: Locator): Promise<number> {
+  const caja = await locator.boundingBox()
+  expect(caja).not.toBeNull()
+  return caja?.width ?? 0
+}
+
+for (const { ancho, alto, minimo } of [
+  { ancho: 1440, alto: 900, minimo: 9 },
+  { ancho: 1366, alto: 650, minimo: 8.5 },
+]) {
+  test(`escritorio ${ancho} × ${alto}: la tira de 6 s respondida mide al menos ${minimo} px por mm y «Siguiente» entra sin desplazar`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: ancho, height: alto })
+    for (const bien of [true, false]) {
+      const sesion = await abrirNivel(page, 'lectura')
+      const reto = sesion.actual
+      expect(reto.vista.tipo === 'tira' && reto.vista.tira.duracionMs).toBe(6000)
+      const tira = page.getByRole('img', { name: /^Tira de/ })
+      const columna = await anchoDe(page.locator('section'))
+      // Antes de responder: la tira ya sale de la columna y no hay prueba sobre ella.
+      expect(await anchoDe(tira)).toBeGreaterThan(columna)
+      await expect(page.locator('[data-evidencia]')).toHaveCount(0)
+
+      await (bien ? contestarBien(page, reto) : contestarMal(page, reto))
+      await expect(page.getByRole('status', { name: 'Resultado del reto' })).toContainText(
+        bien ? 'Bien.' : 'No era esa.',
+      )
+      await sinAnimaciones(page)
+      await expect(page.locator('[data-evidencia]')).toHaveCount(reto.evidencia.length)
+      expect((await anchoDe(tira)) / MM_TIRA_6S).toBeGreaterThanOrEqual(minimo)
+      // Página sin desplazarse ni de costado: «Siguiente» entra entero en la ventana.
+      const siguiente = page.getByRole('button', { name: 'Siguiente' })
+      await expect(siguiente).toBeFocused()
+      await expect(siguiente).toBeInViewport({ ratio: 1 })
+      expect(await page.evaluate(() => window.scrollY)).toBe(0)
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        ),
+      ).toBeLessThanOrEqual(0)
+      if (ancho === 1440) await todosLosChequeos(page, bien ? 'ancha-correcta' : 'ancha-incorrecta')
+    }
+  })
+}
+
+test('debajo de 768 px la tira queda en la columna; el latido y el papel nunca salen de ella', async ({
+  page,
+}) => {
+  for (const ancho of [390, 767]) {
+    await page.setViewportSize({ width: ancho, height: 900 })
+    await abrirNivel(page, 'lectura')
+    // El papel lleva 1 px de borde a cada lado.
+    expect(await anchoDe(page.getByRole('img', { name: /^Tira de/ }))).toBeCloseTo(
+      (await anchoDe(page.locator('section'))) - 2,
+      0,
+    )
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  let sesion = await abrirNivel(page, 'ritmo')
+  expect(sesion.actual.vista.tipo).toBe('latido')
+  const columna = await anchoDe(page.locator('section'))
+  expect(await anchoDe(page.getByRole('img', { name: /latido/ }))).toBeLessThanOrEqual(columna)
+  sesion = await abrirNivel(page, 'papel')
+  expect(sesion.actual.vista.tipo).toBe('papel')
+  expect(await anchoDe(page.getByRole('img').first())).toBeLessThanOrEqual(columna)
+})
+
+test('teclado: el 1 elige la primera opción como un clic y, respondido, los dígitos no hacen nada', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const sesion = await abrirNivel(page, 'lectura')
+  const reto = sesion.actual
+  if (reto.respuesta.modo !== 'opciones') throw new Error('El primer reto debía tener opciones')
+  const opciones = page.getByRole('group', { name: 'Opciones' }).getByRole('button')
+  // Con mouse, cada opción muestra su número; el nombre sigue siendo la opción.
+  await expect(page.locator('kbd').first()).toBeVisible()
+  await expect(page.locator('kbd')).toHaveCount(Math.min(4, reto.respuesta.opciones.length))
+  await expect(opciones.first()).toHaveAttribute('aria-keyshortcuts', '1')
+
+  await page.keyboard.press('1')
+  const primera = reto.respuesta.opciones[0]
+  if (!primera) throw new Error('El reto no tiene opciones')
+  const bien = primera.id === reto.respuesta.correcta
+  await expect(opciones.first()).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('status', { name: 'Resultado del reto' })).toContainText(
+    bien ? 'Bien.' : 'No era esa.',
+  )
+  await expect(page.getByRole('button', { name: 'Siguiente' })).toBeFocused()
+  await expect(page.locator('kbd').first()).toBeHidden()
+
+  // Respondido: otro dígito no cambia la respuesta.
+  await page.keyboard.press('2')
+  await expect(opciones.first()).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { pressed: true })).toHaveCount(1)
+})
+
+test.describe('tira apaisada: prueba de la respuesta y atajos (844 × 390, táctil)', () => {
+  test.use({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true })
+
+  test('el dígito responde adentro, sin número a la vista, y la prueba aparece sobre la tira', async ({
+    page,
+  }) => {
+    const sesion = await hastaLaPrimeraTira(page)
+    const reto = sesion.actual
+    const modo = page.getByRole('dialog')
+    await expect(modo).toBeVisible()
+    if (reto.respuesta.modo !== 'opciones') throw new Error('La primera tira debía tener opciones')
+    // Con el dedo no se ve el número, pero el atajo funciona con un teclado conectado.
+    await expect(modo.locator('kbd').first()).toBeHidden()
+    await expect(modo.locator('[data-evidencia]')).toHaveCount(0)
+
+    await page.keyboard.press('1')
+    const primera = reto.respuesta.opciones[0]
+    if (!primera) throw new Error('El reto no tiene opciones')
+    await expect(modo.getByRole('status', { name: 'Resultado del reto' })).toContainText(
+      primera.id === reto.respuesta.correcta ? 'Bien.' : 'No era esa.',
+    )
+    await expect(modo.locator('[data-evidencia]')).toHaveCount(reto.evidencia.length)
+    await tiraEntera(page, modo)
+    await todosLosChequeos(page, 'apaisada-con-prueba')
+  })
+})
