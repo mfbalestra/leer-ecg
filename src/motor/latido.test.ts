@@ -9,6 +9,7 @@ import {
   generarTira,
   latidosVisibles,
   regionesLatido,
+  ritmoTieneP,
   voltajeLatido,
   type ParametrosLatido,
 } from './latido.ts'
@@ -137,6 +138,30 @@ describe('generarTira', () => {
     )
   })
 
+  it('la T de un latido termina antes de la P siguiente, o del QRS siguiente en un ritmo sin P', () => {
+    fc.assert(
+      fc.property(
+        parametros,
+        semillas,
+        fc.constantFrom('regular', 'sinusal-irregular', 'irregular-sin-p' as const),
+        (p, semilla, ritmo) => {
+          const tira = generarTira({
+            duracionMs: 6000,
+            parametros: p,
+            ritmo,
+            azar: crearAzar(semilla),
+          })
+          return tira.latidos.every((l, i) => {
+            const siguiente = tira.latidos[i + 1]
+            if (!siguiente) return true
+            const limite = ritmoTieneP(ritmo) ? siguiente.pInicioMs : siguiente.qrsInicioMs
+            return l.tFinMs <= limite
+          })
+        },
+      ),
+    )
+  })
+
   it('los picos que de verdad se dibujan son exactamente las R que contarQrs cuenta', () => {
     fc.assert(
       fc.property(
@@ -150,10 +175,15 @@ describe('generarTira', () => {
             ritmo,
             azar: crearAzar(semilla),
           })
-          // Por encima de este umbral sólo pasa la R: la T llega como mucho a stMv + tMv, más la
-          // ondulación de base de un ritmo sin P (0,06 mV). Un latido que no entra en su RR se
-          // recorta (ajustarAlRitmo), así que la T no se suma a la P siguiente.
-          const umbral = Math.max(p.stMv, 0) + 0.3 + 0.1
+          // El umbral queda entre la T más alta y la R más baja que puede dibujar este latido. La T
+          // llega como mucho a stMv + tMv; la R sube de 0 a rMv en un cuarto del QRS y su muestra
+          // más cercana queda a medio paso del pico. Sin P se suma la ondulación de base (0,06 mV).
+          // La T no se suma a la P siguiente: lo garantiza el test anterior.
+          const ondulacion = p.pPresente && ritmoTieneP(ritmo) ? 0 : 0.06
+          const tMasAlta = Math.max(p.stMv, 0) + p.tMv + ondulacion
+          const rMasBaja = p.rMv - (p.rMv / (0.25 * p.qrsMs)) * (tira.pasoMs / 2) - ondulacion
+          if (rMasBaja <= tMasAlta) return false
+          const umbral = (tMasAlta + rMasBaja) / 2
           // Cada R contada tiene su pico dibujado.
           for (const latido of tira.latidos) {
             if (
@@ -182,6 +212,50 @@ describe('generarTira', () => {
           return contarQrs(tira, 0, 6000) === tira.latidos.filter((l) => l.rMs <= 6000).length
         },
       ),
+      {
+        examples: [
+          // R baja con el ST elevado y la línea de base ondulante: la R quedaba en 0,699 mV.
+          [
+            {
+              frecuencia: 34,
+              prMs: 114,
+              pMs: 111,
+              qrsMs: 63,
+              qtMs: 238,
+              tMs: 127,
+              pMv: 0.05,
+              qMv: -0.1,
+              rMv: 0.8,
+              sMv: -0.25,
+              tMv: 0.3,
+              stMv: 0.3,
+              pPresente: false,
+            },
+            275054064,
+            'regular',
+          ],
+          // Sinusal irregular rápido: la P se montaba sobre la T del latido anterior.
+          [
+            {
+              frecuencia: 90,
+              prMs: 239,
+              pMs: 62,
+              qrsMs: 175,
+              qtMs: 476,
+              tMs: 144,
+              pMv: 0.24223808624206652,
+              qMv: -0.1,
+              rMv: 0.934739739687471,
+              sMv: -0.25,
+              tMv: 0.3,
+              stMv: 0,
+              pPresente: true,
+            },
+            0,
+            'sinusal-irregular',
+          ],
+        ],
+      },
     )
   })
 

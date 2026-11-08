@@ -132,14 +132,32 @@ export type OpcionesTira = {
   pasoMs?: number
 }
 
+/** Cuánto se aparta el RR del sinusal irregular de su base, hacia arriba y hacia abajo. */
+const VARIACION_SINUSAL = 0.14
+/** El RR más corto del irregular sin P, como fracción del base; el más largo suma `AMPLITUD_SIN_P`. */
+const MINIMO_SIN_P = 0.65
+const AMPLITUD_SIN_P = 0.7
+
 function siguienteRr(rrBase: number, ritmo: Ritmo, indice: number, azar: Azar): number {
   switch (ritmo) {
     case 'regular':
       return rrBase
     case 'sinusal-irregular':
-      return rrBase * (1 + 0.14 * Math.sin((indice * Math.PI) / 2.5))
+      return rrBase * (1 + VARIACION_SINUSAL * Math.sin((indice * Math.PI) / 2.5))
     case 'irregular-sin-p':
-      return rrBase * (0.65 + 0.7 * azar.siguiente())
+      return rrBase * (MINIMO_SIN_P + AMPLITUD_SIN_P * azar.siguiente())
+  }
+}
+
+/** El RR más corto que puede tocar en el ritmo: cada latido tiene que entrar ahí sin pisar la P siguiente. */
+function rrMasCorto(rrBase: number, ritmo: Ritmo): number {
+  switch (ritmo) {
+    case 'regular':
+      return rrBase
+    case 'sinusal-irregular':
+      return rrBase * (1 - VARIACION_SINUSAL)
+    case 'irregular-sin-p':
+      return rrBase * MINIMO_SIN_P
   }
 }
 
@@ -171,8 +189,7 @@ export function generarTira(opciones: OpcionesTira): Tira {
   const rrBase = rrPorFrecuencia(opciones.parametros.frecuencia)
   const parametros: ParametrosLatido = ajustarAlRitmo(
     ritmoTieneP(ritmo) ? opciones.parametros : { ...opciones.parametros, pPresente: false },
-    // En un ritmo irregular el RR más corto es 0,65 del base: el latido tiene que entrar ahí.
-    ritmo === 'irregular-sin-p' ? rrBase * 0.65 : rrBase,
+    rrMasCorto(rrBase, ritmo),
   )
   const fase = azar.siguiente() * Math.PI * 2
   const inicio = opciones.inicioMs ?? azar.siguiente() * rrBase * 0.6
